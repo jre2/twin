@@ -18,7 +18,7 @@ st : GameState
 
 AssetDB :: struct {
     player_topdown : rl.Texture2D,
-    player_side : [2]rl.Texture2D,
+    player_side : [4]rl.Texture2D,
     player_scale : f32,
     crosshair : rl.Texture2D,
     crosshair_scale : f32,
@@ -27,21 +27,16 @@ AssetDB :: struct {
 }
 load_assets := proc() {
     assets.player_topdown = rl.LoadTexture( "res/char1.png" )
+
     assets.player_side[0] = rl.LoadTexture( "res/char2.png" )
-    assets.player_side[1] = rl.LoadTexture( "res/char2_flipped.png" )
+    assets.player_side[1] = rl.LoadTexture( "res/char2.png" )
+    assets.player_side[2] = rl.LoadTexture( "res/char2.png" )
+    assets.player_side[3] = rl.LoadTexture( "res/char2.png" )
+
     assets.player_scale = 0.1/40
 
     assets.crosshair = rl.LoadTexture( "res/crosshair.png" )
     assets.crosshair_scale = 0.1/20
-
-    if false {
-        for i in 0..=3 {
-            path := fmt.tprint( "res/char_walk_%d.png", i )
-            cpath := strings.clone_to_cstring( path, context.temp_allocator )
-            assets.player_walk[i] = rl.LoadTexture( cpath )
-        }
-        assets.player_walk_scale = 0.5/40
-    }
 }
 Vec2 :: [2]f32
 Vec2i :: [2]i32
@@ -71,9 +66,9 @@ draw_text :: proc( pos: Vec2, size: f32, fmtstring: string, args: ..any ) {
     cs := strings.clone_to_cstring( s, context.temp_allocator )
     rl.DrawText( cs, i32(pos.x), i32(pos.y), i32(size), rl.RAYWHITE )
 }
-draw_tex :: proc( tex: rl.Texture2D, pos: Vec2, scale: f32, angle: f32 ) {
+draw_tex :: proc( tex: rl.Texture2D, pos: Vec2, scale: f32, angle: f32, flipH: bool = false ) {
     src_size := vec2({ tex.width, tex.height })
-    src_rect := rl.Rectangle{ 0, 0, src_size.x, src_size.y }
+    src_rect := rl.Rectangle{ 0, 0, src_size.x if !flipH else -src_size.x, src_size.y }
     dest_size := src_size * scale
     dest_rect := rl.Rectangle{ pos.x, pos.y, dest_size.x, dest_size.y }
     rl.DrawTexturePro( tex, src_rect, dest_rect, dest_size/2, angle, rl.WHITE )
@@ -179,17 +174,14 @@ main :: proc() {
                         draw_tex( assets.player_topdown, player_pos, st.player_size_topdown * assets.player_scale, st.player_rot )
                     } else {
                         rl.DrawCircleLines( i32(st.player_pos.x), i32(st.player_pos.y), st.player_size_side, rl.GREEN )
-                        if last_move_dir.x < 0 { // facing left
-                            draw_tex( assets.player_side[1], player_pos, st.player_size_side * assets.player_scale, st.player_rot )
-                        } else { // facing right
-                            draw_tex( assets.player_side[0], player_pos, st.player_size_side * assets.player_scale, st.player_rot )
-                        }
+                        draw_tex( assets.player_side[0], player_pos, st.player_size_side * assets.player_scale, st.player_rot, last_move_dir.x < 0 )
                     }
                     rl.DrawCircleLines( i32(st.crosshair_pos.x), i32(st.crosshair_pos.y), st.crosshair_size, rl.GREEN )
                     draw_tex( assets.crosshair, st.crosshair_pos, st.crosshair_size * assets.crosshair_scale, 0 )
 
                 rl.EndMode2D()
             draw_text( {10,10}, 20, "FPS %d pos %v cross %v wasd %v anim_speed %v", rl.GetFPS(), st.player_pos, st.crosshair_pos, dir_input, st.anim_speed )
+            draw_text( {10,30}, 20, "Mousesheel to change animation speed, T to toggle topdown mode" )
             rl.EndDrawing()
         }
     }
