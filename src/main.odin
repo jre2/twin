@@ -17,12 +17,31 @@ assets : AssetDB
 st : GameState
 
 AssetDB :: struct {
-    player : rl.Texture2D,
+    player_topdown : rl.Texture2D,
+    player_side : [2]rl.Texture2D,
+    player_scale : f32,
     crosshair : rl.Texture2D,
+    crosshair_scale : f32,
+    player_walk : [4]rl.Texture2D,
+    player_walk_scale : f32,
 }
 load_assets := proc() {
-    assets.player = rl.LoadTexture( "res/char1.png" )
+    assets.player_topdown = rl.LoadTexture( "res/char1.png" )
+    assets.player_side[0] = rl.LoadTexture( "res/char2.png" )
+    assets.player_side[1] = rl.LoadTexture( "res/char2_flipped.png" )
+    assets.player_scale = 0.1/40
+
     assets.crosshair = rl.LoadTexture( "res/crosshair.png" )
+    assets.crosshair_scale = 0.1/20
+
+    if false {
+        for i in 0..=3 {
+            path := fmt.tprint( "res/char_walk_%d.png", i )
+            cpath := strings.clone_to_cstring( path, context.temp_allocator )
+            assets.player_walk[i] = rl.LoadTexture( cpath )
+        }
+        assets.player_walk_scale = 0.5/40
+    }
 }
 Vec2 :: [2]f32
 Vec2i :: [2]i32
@@ -33,9 +52,16 @@ GameState :: struct {
 
     mouse_pos : Vec2, // screen space
     crosshair_pos : Vec2, // world space
+    crosshair_size : f32,
 
     player_pos : Vec2,
     player_rot : f32, // degrees
+    player_size_topdown : f32,
+    player_size_side : f32,
+    player_speed : f32,
+
+    anim_speed : f32,
+    topdown_mode : bool,
 }
 vec2 :: proc( v: Vec2i ) -> Vec2 { return Vec2{ f32(v.x), f32(v.y) } }
 vec2i :: proc( v: Vec2 ) -> Vec2i { return Vec2i{ i32(v.x), i32(v.y) } }
@@ -77,6 +103,13 @@ main :: proc() {
     rl.HideCursor()
     load_assets()
     st.camera.zoom = 1.0
+    st.player_size_topdown = 40
+    st.player_size_side = 40*5
+    st.crosshair_size = 20
+    st.player_speed = 700.0
+    st.anim_speed = 15.0
+
+    last_move_dir : Vec2
 
     for !rl.WindowShouldClose() {
         free_all( context.temp_allocator )
@@ -89,14 +122,19 @@ main :: proc() {
 
         { // Camera
             st.camera.offset = st.render_size / 2 // if window resized, we must update camera offset based on render (not screen) size
-            st.camera.target = st.player_pos // temp. follow player
+            st.camera.target = st.player_pos // follow player
         }
 
         { // Input - Aiming
             st.crosshair_pos = rl.GetScreenToWorld2D( st.mouse_pos, st.camera )
         }
 
-        { // Player facing towards crosshair
+        if rl.IsKeyPressed( .T ) {
+            st.topdown_mode = !st.topdown_mode
+            st.player_rot = 0
+        }
+
+        if st.topdown_mode { // Player facing towards crosshair
             dir_aiming := st.crosshair_pos - st.player_pos
             st.player_rot = math.atan2( dir_aiming.y, dir_aiming.x ) // radians -π..π
             st.player_rot += math.PI / 2 // normalize so up along y-axis is 0 degrees
@@ -104,20 +142,54 @@ main :: proc() {
             st.player_rot = math.DEG_PER_RAD * st.player_rot // convert to degrees 0..360
         }
 
-        //TODO player movement
+        
+        dir_input : Vec2
+        walk_anim : f32
+        { // Movement
+            if rl.IsKeyDown( .W ) { dir_input.y -= 1 }
+            if rl.IsKeyDown( .S ) { dir_input.y += 1 }
+            if rl.IsKeyDown( .A ) { dir_input.x -= 1 }
+            if rl.IsKeyDown( .D ) { dir_input.x += 1 }
+            if dir_input != {0,0} {
+                dir_input = linalg.normalize( dir_input ) // normalize to unit vector
+                walk_anim = 1.0
+            }
+            last_move_dir = dir_input
+            st.player_pos += dir_input * st.player_speed * rl.GetFrameTime()
+        }
+
+        player_pos : Vec2
+        { // Player animation
+            st.anim_speed += rl.GetMouseWheelMove() * 1.0
+            walk_anim = st.anim_speed * walk_anim
+            player_pos = st.player_pos
+            player_pos.y += math.sin( f32( rl.GetTime() ) * walk_anim ) * 5.0 // bobbing effect
+        }
 
         { // Render
             rl.BeginDrawing()
             rl.ClearBackground( rl.BROWN )
                 rl.BeginMode2D( st.camera )
                     // temp. draw center of screen for reference
-                    rl.DrawLine( 0, -5000, 0, 5000, rl.BLUE )
-                    rl.DrawLine( -5000, 0, 5000, 0, rl.BLUE )
+                    rl.DrawLine( 0, -5000, 0, 5000, rl.GREEN )
+                    rl.DrawLine( -5000, 0, 5000, 0, rl.GREEN )
 
-                    draw_tex( assets.player, st.player_pos, 0.1, st.player_rot )
-                    draw_tex( assets.crosshair, st.crosshair_pos, 0.1, 0 )
+                    if st.topdown_mode {
+                        rl.DrawCircleLines( i32(st.player_pos.x), i32(st.player_pos.y), st.player_size_topdown, rl.GREEN )
+                        draw_tex( assets.player_topdown, player_pos, st.player_size_topdown * assets.player_scale, st.player_rot )
+                    } else {
+                        rl.DrawCircleLines( i32(st.player_pos.x), i32(st.player_pos.y), st.player_size_side, rl.GREEN )
+                        if last_move_dir.x < 0 { // facing left
+                            draw_tex( assets.player_side[1], player_pos, st.player_size_side * assets.player_scale, st.player_rot )
+                        } else { // facing right
+                            draw_tex( assets.player_side[0], player_pos, st.player_size_side * assets.player_scale, st.player_rot )
+                        }
+                    }
+                    rl.DrawCircleLines( i32(st.crosshair_pos.x), i32(st.crosshair_pos.y), st.crosshair_size, rl.GREEN )
+                    draw_tex( assets.crosshair, st.crosshair_pos, st.crosshair_size * assets.crosshair_scale, 0 )
+
                 rl.EndMode2D()
-            draw_text( {10,10}, 20, "FPS %d rend %v dpi %v mouse %v cross %v", rl.GetFPS(), st.render_size, st.dpi_scaling, st.mouse_pos, st.crosshair_pos )
+            draw_text( {10,10}, 20, "FPS %d pos %v cross %v wasd %v anim_speed %v", rl.GetFPS(), st.player_pos, st.crosshair_pos, dir_input, st.anim_speed )
             rl.EndDrawing()
         }
     }
