@@ -1,3 +1,4 @@
 bin/*.exe
 bin/*.pdb
 bin/*.7z
+bin/*.dSYM
