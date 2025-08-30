@@ -178,7 +178,7 @@ main :: proc() {
             player.vel += dir_input * accel_per_sec * rl.GetFrameTime()
             player.vel = player.vel * math.pow( fric_per_sec, rl.GetFrameTime() )
             player.pos += player.vel * rl.GetFrameTime()
-            
+
             // This is effectively enforced by the nature of acceleration and friction
             //player.vel.x = clamp( player.vel.x, -player.max_vel.x, player.max_vel.x )
             //player.vel.y = clamp( player.vel.y, -player.max_vel.y, player.max_vel.y )
@@ -198,7 +198,7 @@ main :: proc() {
                         flipH := e.vel.x < 0 // flip horizontally if moving left
 
                         // Maybe only animate if moving?
-                        
+
                         if e.type != .Crosshair { // Bobbing effect
                             pos.y += math.sin( f32( rl.GetTime() ) * viz.bob_speed ) * viz.bob_magnitude
                         }
