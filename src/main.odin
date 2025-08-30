@@ -217,4 +217,8 @@ main :: proc() {
             rl.EndDrawing()
         }
     }
+    // Cleanup
+    delete( st.entities )
+    for &viz in VizDB { rl.UnloadTexture( viz.texture ) }
+    rl.CloseWindow()
 }
