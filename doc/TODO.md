@@ -3,19 +3,22 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Not enough Entity update is unified. Particles have their own collision detection but we do a generic Entity x Entity loop later. Similar for handling death and removal of entities.
+- [ ] Finalize the unified damage/collision/cleanup section so particle and entity damage rules stay co-located and evolve together.
+- [ ] Sample `dt` once per frame and pass it through update sections to avoid subtle timing drift from repeated `GetFrameTime()` calls.
+- [ ] Add focused regression tests for weapon/reload transitions (especially `ClipDrop`/`ClipInsert`, perfect timing path, and fire-mode toggle behavior).
+- [ ] Implement a real gameplay effect for `perfect_reload_clip` (currently HUD/state only).
+- [ ] Medium priority: do a full loop-style pass across the codebase; make loops more idiomatic Odin (`for x in xs` where feasible, cleaner index loops where mutation/removal requires indices).
 
 ## Next
-- [ ] Medium priority: do a full loop-style pass across the codebase; make loops more idiomatic Odin (`for x in xs` where feasible, cleaner index loops where mutation/removal requires indices).
 - [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
 - [ ] Add baseline enemy AI: chase player, keep spacing, and apply simple steering to avoid clumping.
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 - [ ] Add pickup/ammo economy hooks to support longer runs.
 - [ ] Prevent enemy-vs-enemy collision damage; keep friendly fire enabled for enemy-fired projectiles.
-- [ ] Add a simple pause/settings screen (audio sliders, controls legend, restart button).
+- [ ] Add a simple pause/settings screen (audio sliders, controls legend, restart button), including controls for toggles like debug overlay and fire mode.
 
 ## Later
-- [ ] Add Odin tests (`@(test)`) for deterministic logic: weapon transitions, ammo accounting, and damage math.
+- [ ] Expand test coverage beyond FSM regressions (ammo economy, wave scaling math, and collision edge cases).
 - [ ] Replace temporary enemy art link (`res/enemy.png -> char2.png`) with final art asset pipeline.
 - [ ] Revisit weapon FSM structure to reduce `Idle`/`Firing` coupling while preserving no-frame-delay first shot behavior.
 - [ ] Consider fully separating Entities and Particles. Bullets become Entities, particles have no collision, etc
