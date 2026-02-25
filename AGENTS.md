@@ -6,15 +6,14 @@
 - `bin/`: Build output directory (`twin.exe`). Run Odin build/test commands from this folder.
 - `tools/`: Helper scripts for local run/watch workflows.
 - `doc/`: Notes and platform resource files (icons, `.rc`, etc.).
+- `doc/TODO.md`: Prioritized task backlog to direct future work.
 
 ## Build, Test, and Development Commands
 - `cd bin && odin run ../src -out:twin.exe -debug`: Run a debug build.
 - `cd bin && odin build ../src -out:twin.exe -debug`: Build debug binary only.
-- `cd bin && odin build ../src -out:twin.exe`: Build release binary.
 - `cd bin && odin check ../src`: Type-check without producing a binary.
 - `cd bin && odin test ../src`: Run Odin tests.
 - `./tools/run.sh`: Convenience wrapper for debug run.
-- `./tools/watch.sh`: Re-run on `.odin` file changes (requires `inotifywait`, Linux-focused).
 
 ## Coding Style & Naming Conventions
 - Use spaces (4-space indent), not tabs (`.editorconfig`, `odinfmt.json`).
@@ -23,7 +22,7 @@
 - Types/enums use `PascalCase` (example: `GameState`, `WeaponType`).
 - Procedures/locals may use snake_case where already established.
 - Keep static data tables (`VizDB`, `WeaponDB`) centralized and update them atomically with related gameplay changes.
-- Keep game data (eg. weapon/enemy balance) baked into game source code rather than external config files. Odin compile times are fast
+- Keep game data (for example, weapon/enemy balance) baked into source code rather than external config files, since Odin compile times are fast.
 
 ## Testing Guidelines
 - Prefer Odin built-in tests with `@(test)` procedures and run via `cd bin && odin test ../src`.
