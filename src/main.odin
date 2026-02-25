@@ -568,7 +568,8 @@ update_gameplay :: proc() {
                 to_e  := e.pos - beam_origin
                 along := linalg.dot(to_e, beam_dir)
                 if along < 0 {continue}
-                if linalg.length(to_e - beam_dir * along) < def.beam_half_width + e.radius {
+                beam_hit_r := def.beam_half_width + e.radius
+                if linalg.length2(to_e - beam_dir * along) < beam_hit_r * beam_hit_r {
                     e.health -= def.beam_damage * dt
                     e.hit_flash = max(e.hit_flash, 0.06)
                     if rl.GetRandomValue(0, 100) < 10 {
@@ -626,7 +627,8 @@ update_gameplay :: proc() {
             dead := p.age >= p.max_age
             if p.damage > 0 && !dead {
                 for &e in st.entities {
-                    if e.type == .Enemy && linalg.length(e.pos - p.pos) < e.radius + p.radius {
+                    hit_r := e.radius + p.radius
+                    if e.type == .Enemy && linalg.length2(e.pos - p.pos) < hit_r * hit_r {
                         apply_damage_with_flash(&e, p.damage, 0.16)
                         spawn_hit_sparks(p.pos, p.color, 5)
                         dead = true
@@ -642,7 +644,8 @@ update_gameplay :: proc() {
             for j in i + 1 ..< len(st.entities) {
                 a := &st.entities[i]
                 b := &st.entities[j]
-                if linalg.length(b.pos - a.pos) < a.radius + b.radius {
+                hit_r := a.radius + b.radius
+                if linalg.length2(b.pos - a.pos) < hit_r * hit_r {
                     apply_damage_with_flash(a, b.damage * dt, 0.1)
                     apply_damage_with_flash(b, a.damage * dt, 0.1)
                 }

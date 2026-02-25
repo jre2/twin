@@ -4,7 +4,6 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 
 ## Now
 - [ ] Not enough Entity update is unified. Particles have their own collision detection but we do a generic Entity x Entity loop later. Similar for handling death and removal of entities.
-- [ ] Collision detection should use squared distance so we can avoid sqrt(), as a performance gain. Odin core library has a variant for this.
 - [ ] Add lightweight profiling/debug overlays for entity counts, frame timings, and particle counts.
 
 ## Next
@@ -20,8 +19,10 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Add Odin tests (`@(test)`) for deterministic logic: weapon transitions, ammo accounting, and damage math.
 - [ ] Replace temporary enemy art link (`res/enemy.png -> char2.png`) with final art asset pipeline.
 - [ ] Revisit weapon FSM structure to reduce `Idle`/`Firing` coupling while preserving no-frame-delay first shot behavior.
+- [ ] Consider fully separating Entities and Particles. Bullets become Entities, particles have no collision, etc
 
 ## Recently Completed
+- [x] Collision checks now use `linalg.length2` squared-distance comparisons (no sqrt in hot paths).
 - [x] Cleaned up non-idiomatic index loops in damage/cleanup paths to idiomatic Odin `for i := ...` form.
 - [x] Added reload minigame during `ClipInsert` with perfect timing that instantly completes insert.
 - [x] Added perfect-reload fanfare (SFX + VFX + HUD `PERFECT CLIP` state).
