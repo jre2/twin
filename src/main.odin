@@ -42,9 +42,19 @@ Entity :: struct {
     health:     f32,
     max_health: f32,
     damage:     f32, // contact damage per second
+    cant_volitional_move: bool, // whether entity can move of their own volition; momentum and knockback are not affected
 }
 WeaponType :: enum {SMG, Rifle, Tesla, Cannon}
-WeaponState :: enum {Idle, Charging, BeamActive, Cooldown}
+WeaponState :: enum {
+    Idle,
+    Switching,    // equipping a new weapon
+    Firing,       // just fired, waiting for fire_interval to elapse
+    ClipDrop,     // ejecting current clip
+    ClipInsert,   // inserting new clip from reserve
+    Charging,     // cannon: holding LMB to charge
+    BeamActive,   // cannon: beam firing
+    Cooldown,     // cannon: post-beam cooldown
+}
 WeaponDef :: struct {
     name:              string,
     sound_path:        string,
@@ -68,20 +78,21 @@ WeaponDef :: struct {
     beam_half_width:   f32, // cannon: beam half-width in world units
     beam_damage:       f32, // cannon: damage/sec to entities in beam
     beam_duration:     f32, // cannon: seconds beam stays active
+    switch_time:       f32, // seconds to equip this weapon
+    clip_drop_time:    f32, // seconds to eject clip
+    clip_insert_time:  f32, // seconds to load a new clip
 }
 WeaponInstance :: struct {
     ammo_in_clip:       int,
     ammo_reserve:       int,
-    clip_dropped:       bool,
-    fire_timer:         f32, // seconds until can fire again
     state:              WeaponState,
-    charge:             f32, // cannon: seconds charged so far
-    cooldown_timer:     f32,
-    beam_timer:         f32, // cannon: seconds beam has been active
-    beam_angle:         f32, // cannon: aim angle (degrees) locked at fire
-    charge_sfx_playing: bool,
-    kickback:           f32, // current kickback offset (decays)
-    muzzle_flash_timer: f32, // counts down from flash_duration to 0
+    state_timer:        f32, // seconds elapsed in current state
+    state_duration:     f32, // total duration of current state (set on entry)
+    beam_angle:         f32, // cannon: locked aim angle during beam
+    charge_sfx_playing: bool, // cannon: whether charge sound is playing
+    pending_weapon:     WeaponType, // target weapon during Switching state
+    kickback:           f32, // visual only: decays independently
+    muzzle_flash_timer: f32, // visual only: decays independently
 }
 Particle :: struct {
     pos:     Vec2,
@@ -102,6 +113,7 @@ GameState :: struct {
     crosshair:         ^Entity,
     sprite_aim_rotate: bool,
     flip_by_aim:       bool, // true = flip sprite based on aim direction; false = flip based on movement
+    auto_reload:       bool, // true = clip drop automatically chains into clip insert
     current_weapon:    WeaponType,
     weapons:           [WeaponType]WeaponInstance,
     particles:         [dynamic]Particle,
@@ -124,18 +136,10 @@ draw_tex :: proc(tex: rl.Texture2D, pos: Vec2, scale: Vec2, angle: f32, flipH: b
     rl.DrawTexturePro(tex, src_rect, dest_rect, dest_size / 2, angle, rl.WHITE)
 }
 
-switch_weapon :: proc(to: WeaponType) {
-    if to == st.current_weapon {return}
-    if st.current_weapon == .Cannon {
-        cannon := &st.weapons[.Cannon]
-        if cannon.state == .Charging {
-            rl.StopSound(WeaponDB[.Cannon].charge_sound)
-            cannon.charge_sfx_playing = false
-            cannon.charge = 0
-            cannon.state = .Idle
-        }
-    }
-    st.current_weapon = to
+enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32) {
+    inst.state = new_state
+    inst.state_timer = 0
+    inst.state_duration = duration
 }
 
 fire_bullet :: proc(inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32) {
@@ -143,53 +147,11 @@ fire_bullet :: proc(inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim
     vel := Vec2{math.cos(spread), math.sin(spread)} * def.bullet_speed
     append(&st.particles, Particle{pos = muzzle_pos, vel = vel, radius = def.bullet_radius, damage = def.bullet_damage, color = def.bullet_color, max_age = 3.0})
     inst.ammo_in_clip -= 1
-    inst.fire_timer = def.fire_interval
     inst.kickback = def.kickback_impulse
     inst.muzzle_flash_timer = def.flash_duration
     st.camera_shake = max(st.camera_shake, def.shake_impulse)
     rl.PlaySound(def.sound)
-}
-
-handle_cannon :: proc(inst: ^WeaponInstance, def: WeaponDef, aim_rad: f32, muzzle_pos: Vec2, dt: f32) {
-    switch inst.state {
-    case .Idle:
-        if rl.IsMouseButtonDown(.LEFT) && inst.ammo_in_clip > 0 {
-            inst.state = .Charging
-            inst.charge = 0
-            rl.PlaySound(def.charge_sound)
-            inst.charge_sfx_playing = true
-        }
-    case .Charging:
-        if rl.IsMouseButtonDown(.LEFT) {
-            inst.charge = min(inst.charge + dt, def.charge_time)
-            aim_dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
-            for _ in 0 ..< 3 {
-                ang := aim_rad + f32(rl.GetRandomValue(-750, 750)) / 1000.0
-                r := f32(rl.GetRandomValue(80, 130))
-                spawn := st.player.pos + Vec2{math.cos(ang), math.sin(ang)} * r
-                append(&st.particles, Particle{pos = spawn, vel = (muzzle_pos - spawn) * 1.3, radius = f32(rl.GetRandomValue(3, 6)), color = rl.SKYBLUE, max_age = f32(rl.GetRandomValue(22, 35)) / 100.0})
-            }
-            _ = aim_dir
-            charge_frac := inst.charge / def.charge_time
-            st.camera_shake = max(st.camera_shake, 7 + 22 * charge_frac)
-        } else {
-            rl.StopSound(def.charge_sound)
-            inst.charge_sfx_playing = false
-            if inst.charge >= def.charge_time {
-                inst.state = .BeamActive
-                inst.beam_angle = st.player.aim_angle
-                inst.beam_timer = 0
-                inst.ammo_in_clip -= 1
-                inst.kickback = def.kickback_impulse
-                st.camera_shake = max(st.camera_shake, def.shake_impulse)
-                rl.PlaySound(def.sound)
-            } else {
-                inst.state = .Idle
-                inst.charge = 0
-            }
-        }
-    case .BeamActive, .Cooldown: // ticked unconditionally outside this proc
-    }
+    enter_state(inst, .Firing, def.fire_interval)
 }
 
 draw_cannon_beam :: proc(beam_angle_deg: f32, beam_timer: f32) {
@@ -222,29 +184,34 @@ WeaponDB := [WeaponType]WeaponDef {
         fire_interval = 0.065, clip_size = 30, max_ammo = 180,
         bullet_damage = 5, bullet_speed = 800, bullet_spread = 0.4, bullet_radius = 4, bullet_color = rl.YELLOW,
         kickback_impulse = 7, shake_impulse = 6, flash_size = 24, flash_duration = 0.05,
+        switch_time = 0.3, clip_drop_time = 0.15, clip_insert_time = 0.4,
     },
     .Rifle  = WeaponDef{
         name = "Rifle", sound_path = "res/rifle.mp3",
         fire_interval = 0.3, clip_size = 10, max_ammo = 60,
         bullet_damage = 25, bullet_speed = 1200, bullet_spread = 0.15, bullet_radius = 5, bullet_color = rl.RAYWHITE,
         kickback_impulse = 33, shake_impulse = 21, flash_size = 58, flash_duration = 0.12,
+        switch_time = 0.4, clip_drop_time = 0.15, clip_insert_time = 0.5,
     },
     .Tesla  = WeaponDef{
         name = "Tesla Gun", sound_path = "res/tesla_gun.mp3",
         fire_interval = 0.2, clip_size = 20, max_ammo = 100,
         bullet_damage = 15, bullet_speed = 1000, bullet_spread = 0.25, bullet_radius = 4, bullet_color = rl.SKYBLUE,
         kickback_impulse = 12, shake_impulse = 10, flash_size = 0, flash_duration = 0.1,
+        switch_time = 0.35, clip_drop_time = 0.15, clip_insert_time = 0.35,
     },
     .Cannon = WeaponDef{
         name = "Particle Cannon", sound_path = "res/cannon_fire.mp3", charge_sound_path = "res/cannon_charge.mp3",
         clip_size = 3, max_ammo = 9,
         kickback_impulse = 47, shake_impulse = 55,
         charge_time = 3.5, cooldown_time = 2.0, beam_half_width = 60, beam_damage = 300, beam_duration = 1.5,
+        switch_time = 0.6, clip_drop_time = 0.2, clip_insert_time = 0.8,
     },
 }
 st := GameState {
     camera      = rl.Camera2D{zoom = 1.0},
     flip_by_aim = true,
+    auto_reload = false,
 }
 
 main :: proc() {
@@ -320,6 +287,7 @@ main :: proc() {
             st.mouse_pos = rl.GetMousePosition() * st.dpi_scaling // not DPI aware so we must fix
             if rl.IsKeyPressed(.Y) {st.sprite_aim_rotate = !st.sprite_aim_rotate}
             if rl.IsKeyPressed(.T) {st.flip_by_aim = !st.flip_by_aim}
+            if rl.IsKeyPressed(.G) {st.auto_reload = !st.auto_reload}
         }
 
         {     // Camera
@@ -336,10 +304,13 @@ main :: proc() {
 
         dir_input: Vec2
         {     // Movement
-            if rl.IsKeyDown(.W) {dir_input.y -= 1}
-            if rl.IsKeyDown(.S) {dir_input.y += 1}
-            if rl.IsKeyDown(.A) {dir_input.x -= 1}
-            if rl.IsKeyDown(.D) {dir_input.x += 1}
+            st.player.cant_volitional_move = st.weapons[st.current_weapon].state != .Idle // TODO refactor so every entity has weapons; not just the player in some global state
+            if !st.player.cant_volitional_move {
+                if rl.IsKeyDown(.W) {dir_input.y -= 1}
+                if rl.IsKeyDown(.S) {dir_input.y += 1}
+                if rl.IsKeyDown(.A) {dir_input.x -= 1}
+                if rl.IsKeyDown(.D) {dir_input.x += 1}
+            }
 
             accel_per_sec := st.player.max_vel * (1 - FrictionGroundPerTick) * 35.0
             st.player.vel += dir_input * accel_per_sec * rl.GetFrameTime()
@@ -361,12 +332,6 @@ main :: proc() {
 
         {     // Weapons
             dt := rl.GetFrameTime()
-
-            if      rl.IsKeyPressed(.ONE)   {switch_weapon(.SMG)}
-            else if rl.IsKeyPressed(.TWO)   {switch_weapon(.Rifle)}
-            else if rl.IsKeyPressed(.THREE) {switch_weapon(.Tesla)}
-            else if rl.IsKeyPressed(.FOUR)  {switch_weapon(.Cannon)}
-
             def  := WeaponDB[st.current_weapon]
             inst := &st.weapons[st.current_weapon]
 
@@ -374,67 +339,133 @@ main :: proc() {
             aim_dir    := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
             muzzle_pos := st.player.pos + aim_dir * (st.player.radius + 15)
 
-            // Reload (R key: first press drops clip, second press loads new clip)
-            if rl.IsKeyPressed(.R) && inst.state != .Charging {
-                if !inst.clip_dropped {
+            inst.state_timer += dt
+
+            switch inst.state {
+            case .Idle:
+                // Weapon switch: 1-4 keys
+                wanted: Maybe(WeaponType)
+                if      rl.IsKeyPressed(.ONE)   {wanted = .SMG}
+                else if rl.IsKeyPressed(.TWO)   {wanted = .Rifle}
+                else if rl.IsKeyPressed(.THREE) {wanted = .Tesla}
+                else if rl.IsKeyPressed(.FOUR)  {wanted = .Cannon}
+                if w, ok := wanted.?; ok && w != st.current_weapon {
+                    inst.pending_weapon = w
+                    enter_state(inst, .Switching, def.switch_time)
+                } else if rl.IsKeyPressed(.R) {
+                    // Reload: R key — drop clip first, then insert
+                    if inst.ammo_in_clip > 0 {
+                        enter_state(inst, .ClipDrop, def.clip_drop_time)
+                    } else if inst.ammo_reserve > 0 {
+                        enter_state(inst, .ClipInsert, def.clip_insert_time)
+                    }
+                } else {
+                    // Firing (per weapon type)
+                    switch st.current_weapon {
+                    case .SMG, .Tesla:
+                        if rl.IsMouseButtonDown(.LEFT) && inst.ammo_in_clip > 0 {
+                            fire_bullet(inst, def, muzzle_pos, aim_rad)
+                        }
+                    case .Rifle:
+                        if rl.IsMouseButtonPressed(.LEFT) && inst.ammo_in_clip > 0 {
+                            fire_bullet(inst, def, muzzle_pos, aim_rad)
+                        }
+                    case .Cannon:
+                        if rl.IsMouseButtonDown(.LEFT) && inst.ammo_in_clip > 0 {
+                            enter_state(inst, .Charging, def.charge_time)
+                            rl.PlaySound(def.charge_sound)
+                            inst.charge_sfx_playing = true
+                        }
+                    }
+                }
+
+            case .Switching:
+                if inst.state_timer >= inst.state_duration {
+                    st.current_weapon = inst.pending_weapon
+                    enter_state(&st.weapons[inst.pending_weapon], .Idle, 0)
+                }
+
+            case .Firing:
+                if inst.state_timer >= inst.state_duration {
+                    should_auto_fire := (st.current_weapon == .SMG || st.current_weapon == .Tesla) && rl.IsMouseButtonDown(.LEFT) && inst.ammo_in_clip > 0
+                    if should_auto_fire {
+                        fire_bullet(inst, def, muzzle_pos, aim_rad)
+                    } else {
+                        enter_state(inst, .Idle, 0)
+                    }
+                }
+
+            case .ClipDrop:
+                if inst.state_timer >= inst.state_duration {
                     inst.ammo_in_clip = 0
-                    inst.clip_dropped = true
-                } else if inst.ammo_reserve > 0 {
+                    if st.auto_reload && inst.ammo_reserve > 0 {
+                        enter_state(inst, .ClipInsert, def.clip_insert_time)
+                    } else {
+                        enter_state(inst, .Idle, 0)
+                    }
+                }
+
+            case .ClipInsert:
+                if inst.state_timer >= inst.state_duration {
                     new_count := min(def.clip_size, inst.ammo_reserve)
                     inst.ammo_in_clip = new_count
                     inst.ammo_reserve -= new_count
-                    inst.clip_dropped = false
+                    enter_state(inst, .Idle, 0)
                 }
-            }
 
-            // Firing
-            switch st.current_weapon {
-            case .SMG, .Tesla:
-                if rl.IsMouseButtonDown(.LEFT) && inst.ammo_in_clip > 0 && inst.fire_timer <= 0 {
-                    fire_bullet(inst, def, muzzle_pos, aim_rad)
-                }
-            case .Rifle:
-                if rl.IsMouseButtonPressed(.LEFT) && inst.ammo_in_clip > 0 && inst.fire_timer <= 0 {
-                    fire_bullet(inst, def, muzzle_pos, aim_rad)
-                }
-            case .Cannon:
-                handle_cannon(inst, def, aim_rad, muzzle_pos, dt)
-            }
-
-            if inst.fire_timer > 0 {inst.fire_timer -= dt}
-
-            // Tick cannon beam/cooldown unconditionally so switching weapons doesn't freeze the state machine
-            {
-                cannon := &st.weapons[.Cannon]
-                cdef   := WeaponDB[.Cannon]
-                switch cannon.state {
-                case .BeamActive:
-                    cannon.beam_timer += dt
-                    st.camera_shake = max(st.camera_shake, 55)
-                    beam_rad    := math.to_radians(cannon.beam_angle)
-                    beam_dir    := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
-                    beam_origin := st.player.pos + beam_dir * (st.player.radius + 15)
-                    for &e in st.entities {
-                        if e.type != .Enemy {continue}
-                        to_e  := e.pos - beam_origin
-                        along := linalg.dot(to_e, beam_dir)
-                        if along < 0 {continue}
-                        if linalg.length(to_e - beam_dir * along) < cdef.beam_half_width + e.radius {
-                            e.health -= cdef.beam_damage * dt
-                        }
+            case .Charging:
+                if rl.IsMouseButtonDown(.LEFT) {
+                    charge_frac := inst.state_timer / inst.state_duration
+                    st.camera_shake = max(st.camera_shake, 7 + 22 * charge_frac)
+                    // Spawn converging charge particles
+                    for _ in 0 ..< 3 {
+                        ang := aim_rad + f32(rl.GetRandomValue(-750, 750)) / 1000.0
+                        r := f32(rl.GetRandomValue(80, 130))
+                        spawn := st.player.pos + Vec2{math.cos(ang), math.sin(ang)} * r
+                        append(&st.particles, Particle{pos = spawn, vel = (muzzle_pos - spawn) * 1.3, radius = f32(rl.GetRandomValue(3, 6)), color = rl.SKYBLUE, max_age = f32(rl.GetRandomValue(22, 35)) / 100.0})
                     }
-                    if cannon.beam_timer >= cdef.beam_duration {
-                        cannon.state = .Cooldown
-                        cannon.cooldown_timer = 0
+                } else {
+                    // Released LMB
+                    rl.StopSound(def.charge_sound)
+                    inst.charge_sfx_playing = false
+                    if inst.state_timer >= inst.state_duration {
+                        // Fully charged → fire beam
+                        inst.beam_angle = st.player.aim_angle
+                        inst.ammo_in_clip -= 1
+                        inst.kickback = def.kickback_impulse
+                        st.camera_shake = max(st.camera_shake, def.shake_impulse)
+                        rl.PlaySound(def.sound)
+                        enter_state(inst, .BeamActive, def.beam_duration)
+                    } else {
+                        enter_state(inst, .Idle, 0)
                     }
-                case .Cooldown:
-                    cannon.cooldown_timer += dt
-                    if cannon.cooldown_timer >= cdef.cooldown_time {cannon.state = .Idle}
-                case .Idle, .Charging:
+                }
+
+            case .BeamActive:
+                st.camera_shake = max(st.camera_shake, 55)
+                beam_rad    := math.to_radians(inst.beam_angle)
+                beam_dir    := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
+                beam_origin := st.player.pos + beam_dir * (st.player.radius + 15)
+                for &e in st.entities {
+                    if e.type != .Enemy {continue}
+                    to_e  := e.pos - beam_origin
+                    along := linalg.dot(to_e, beam_dir)
+                    if along < 0 {continue}
+                    if linalg.length(to_e - beam_dir * along) < def.beam_half_width + e.radius {
+                        e.health -= def.beam_damage * dt
+                    }
+                }
+                if inst.state_timer >= inst.state_duration {
+                    enter_state(inst, .Cooldown, def.cooldown_time)
+                }
+
+            case .Cooldown:
+                if inst.state_timer >= inst.state_duration {
+                    enter_state(inst, .Idle, 0)
                 }
             }
 
-            // Decay per-weapon visual effects
+            // Decay visual effects (cosmetic, not state-gated)
             if inst.kickback > 0.1 {inst.kickback *= math.pow(f32(0.72), dt * 60)} else {inst.kickback = 0}
             if inst.muzzle_flash_timer > 0 {inst.muzzle_flash_timer = max(0, inst.muzzle_flash_timer - dt)}
             if st.camera_shake > 0.1 {st.camera_shake *= math.pow(f32(0.78), dt * 60)} else {st.camera_shake = 0}
@@ -559,14 +590,14 @@ main :: proc() {
             // Cannon charging: muzzle glow
             cannon_inst := st.weapons[.Cannon]
             if cannon_inst.state == .Charging {
-                charge_frac := cannon_inst.charge / WeaponDB[.Cannon].charge_time
+                charge_frac := cannon_inst.state_timer / WeaponDB[.Cannon].charge_time
                 for gi in 0 ..< 6 {
                     r := (52 + charge_frac * 22) * (1 - f32(gi) * 0.16)
                     rl.DrawCircle(i32(render_muzzle.x), i32(render_muzzle.y), r, rl.Fade(rl.RAYWHITE, 0.25 + charge_frac * 0.32))
                 }
             }
             if cannon_inst.state == .BeamActive {
-                draw_cannon_beam(cannon_inst.beam_angle, cannon_inst.beam_timer)
+                draw_cannon_beam(cannon_inst.beam_angle, cannon_inst.state_timer)
             }
 
             // Muzzle flash (standard) or Tesla arc
@@ -598,39 +629,65 @@ main :: proc() {
             rl.EndMode2D()
 
             // Cannon white flash (screen-space, drawn after EndMode2D)
-            if cannon_inst.state == .BeamActive && cannon_inst.beam_timer < 0.26 {
-                rl.DrawRectangle(0, 0, i32(st.render_size.x), i32(st.render_size.y), rl.Fade(rl.RAYWHITE, max(f32(0), 1 - cannon_inst.beam_timer / 0.26)))
+            if cannon_inst.state == .BeamActive && cannon_inst.state_timer < 0.26 {
+                rl.DrawRectangle(0, 0, i32(st.render_size.x), i32(st.render_size.y), rl.Fade(rl.RAYWHITE, max(f32(0), 1 - cannon_inst.state_timer / 0.26)))
             }
 
             // HUD
-            def  := WeaponDB[st.current_weapon]
-            inst := st.weapons[st.current_weapon]
+            hud_def  := WeaponDB[st.current_weapon]
+            hud_inst := st.weapons[st.current_weapon]
             draw_text({10, 10}, 20, "FPS %d | HP %.0f", rl.GetFPS(), st.player.health)
-            draw_text({10, 30}, 20, "[1] SMG  [2] Rifle  [3] Tesla  [4] Cannon  |  Y: aim mode  |  WASD: move  |  scroll: zoom")
-            if inst.clip_dropped {
-                draw_text({10, 50}, 20, "%v: -- / %d  (R to load clip)", def.name, inst.ammo_reserve)
-            } else {
-                draw_text({10, 50}, 20, "%v: %d / %d  (R to drop clip)", def.name, inst.ammo_in_clip, inst.ammo_reserve)
+            draw_text({10, 30}, 20, "WASD: move  LMB: fire  R: reload  scroll: zoom  [1-4]: weapon  T: flip-via-aim %v  Y: rotate %v  G: auto-reload %v", st.flip_by_aim, st.sprite_aim_rotate, st.auto_reload )
+            switch hud_inst.state {
+            case .Switching:   draw_text({10, 50}, 20, "SWITCHING...")
+            case .ClipDrop:    draw_text({10, 50}, 20, "%v: DROPPING CLIP...", hud_def.name)
+            case .ClipInsert:  draw_text({10, 50}, 20, "%v: RELOADING...", hud_def.name)
+            case .Idle, .Firing, .Charging, .BeamActive, .Cooldown:
+                draw_text({10, 50}, 20, "%v: %d / %d", hud_def.name, hud_inst.ammo_in_clip, hud_inst.ammo_reserve)
             }
 
-            // Cannon charge / cooldown bar
-            cannon_hud := st.weapons[.Cannon]
-            if cannon_hud.state == .Charging || cannon_hud.state == .Cooldown {
+            // Progress bar for timed states
+            show_bar := false
+            bar_frac: f32
+            bar_color: rl.Color
+            bar_label: string
+            switch hud_inst.state {
+            case .Switching:
+                show_bar = true
+                bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+                bar_color = rl.ORANGE
+                bar_label = "SWITCHING"
+            case .ClipDrop:
+                show_bar = true
+                bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+                bar_color = rl.ORANGE
+                bar_label = "DROPPING CLIP"
+            case .ClipInsert:
+                show_bar = true
+                bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+                bar_color = rl.SKYBLUE
+                bar_label = "RELOADING"
+            case .Charging:
+                show_bar = true
+                bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+                bar_color = rl.YELLOW if bar_frac >= 1 else rl.SKYBLUE
+                bar_label = "MAXIMUM CHARGE!" if bar_frac >= 1 else "CHARGING..."
+            case .Cooldown:
+                show_bar = true
+                bar_frac = 1 - clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+                bar_color = rl.YELLOW
+                bar_label = "COOLDOWN"
+            case .Idle, .Firing, .BeamActive:
+            }
+            if show_bar {
                 barw: f32 = 300
                 barh: f32 = 20
                 cx := st.render_size.x / 2 - barw / 2
                 cy := st.render_size.y - 60
                 rl.DrawRectangle(i32(cx), i32(cy), i32(barw), i32(barh), rl.DARKGRAY)
-                if cannon_hud.state == .Charging {
-                    frac := clamp(cannon_hud.charge / WeaponDB[.Cannon].charge_time, 0, 1)
-                    rl.DrawRectangle(i32(cx), i32(cy), i32(barw * frac), i32(barh), rl.YELLOW if frac >= 1 else rl.SKYBLUE)
-                    draw_text({cx, cy - 24}, 18, "MAXIMUM CHARGE!" if frac >= 1 else "CHARGING...")
-                } else {
-                    frac := clamp(cannon_hud.cooldown_timer / WeaponDB[.Cannon].cooldown_time, 0, 1)
-                    rl.DrawRectangle(i32(cx), i32(cy), i32(barw * (1 - frac)), i32(barh), rl.YELLOW)
-                    draw_text({cx, cy - 24}, 18, "COOLDOWN")
-                }
+                rl.DrawRectangle(i32(cx), i32(cy), i32(barw * bar_frac), i32(barh), bar_color)
                 rl.DrawRectangleLines(i32(cx), i32(cy), i32(barw), i32(barh), rl.RAYWHITE)
+                draw_text({cx, cy - 24}, 18, bar_label)
             }
 
             rl.EndDrawing()
