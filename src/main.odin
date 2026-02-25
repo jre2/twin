@@ -264,7 +264,8 @@ WeaponDB := [WeaponType]WeaponDef {
     },
 }
 st := GameState {
-    camera = rl.Camera2D{zoom = 1.0},
+    camera      = rl.Camera2D{zoom = 1.0},
+    flip_by_aim = true,
 }
 
 main :: proc() {
@@ -360,6 +361,12 @@ main :: proc() {
             st.crosshair.pos = rl.GetScreenToWorld2D(st.mouse_pos, st.camera)
             dir := st.crosshair.pos - st.player.pos
             st.player.aim_angle = math.to_degrees(math.atan2(dir.y, dir.x))
+            for &e in st.entities {
+                if e.type == .Enemy {
+                    d := st.player.pos - e.pos
+                    e.aim_angle = math.to_degrees(math.atan2(d.y, d.x))
+                }
+            }
         }
 
         {     // Weapons
