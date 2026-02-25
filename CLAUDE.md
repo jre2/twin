@@ -1,68 +1,63 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# Repository Guidelines
 
 ## Project Overview
+- **Twin** is a 2D top-down game built with Odin and Raylib.
+- The project intentionally uses a single-package layout so gameplay iteration stays fast (`src/main.odin`).
 
-**Twin** is a 2D top-down game written in [Odin](https://odin-lang.org/), using [Raylib](https://www.raylib.com/) for rendering. It's a single-package project — all source lives in `src/main.odin`.
+## Project Structure & Module Organization
+- `src/main.odin`: Main game package and entry point (gameplay, weapons, update loop, rendering).
+- `res/`: Runtime assets (textures and audio). Add assets here and wire paths in `VizDB`/`WeaponDB`.
+- `bin/`: Build output directory (`twin.exe`). Run Odin build/test commands from this directory.
+- `tools/`: Helper scripts for local run/watch workflows.
+- `doc/`: Notes and platform resource files (icons, `.rc`, etc.).
+- `doc/TODO.md`: Prioritized backlog for upcoming gameplay and tech tasks.
 
-## Commands
-
-All build/run commands must be executed from the `bin/` directory. The output binary is `bin/twin.exe`.
-
-**Run (debug):**
-```sh
-cd bin && odin run ../src -out:twin.exe -debug
-```
-
-**Build only (debug):**
-```sh
-cd bin && odin build ../src -out:twin.exe -debug
-```
-
-**Build (release):**
-```sh
-cd bin && odin build ../src -out:twin.exe
-```
-
-**Type-check without building:**
-```sh
-cd bin && odin check ../src
-```
-
-**Run tests:**
-```sh
-cd bin && odin test ../src
-```
-
-**Format source:**
-```sh
-odinfmt -w src/main.odin
-```
-
-The `tools/run.sh` script is a convenience wrapper that handles the `cd` automatically.
+## Build, Test, and Development Commands
+Run `odin` commands from `bin/`:
+- `cd bin && odin run ../src -out:twin.exe -debug`: Run a debug build.
+- `cd bin && odin build ../src -out:twin.exe -debug`: Build debug binary only.
+- `cd bin && odin check ../src`: Type-check without producing a binary.
+- `cd bin && odin test ../src`: Run Odin tests.
+- `odinfmt -w src/main.odin` (run from repo root): Format source.
+- Preferred verification order for fast iteration: `odin check` -> targeted `odin test` -> manual `odin run` smoke check for gameplay/audio/visual changes.
 
 ## Architecture
+- `Entity`/`EntityType` are core world actor types (`Player`, `Enemy`, `Crosshair`) and hold gameplay-facing state.
+- `VisualData`/`VizDB` contain static render and animation tuning per entity type.
+- `WeaponDef` stores static tuning; `WeaponInstance` stores per-weapon runtime FSM state.
+- `GameState` (`st`) is the shared mutable runtime state for gameplay, rendering, audio triggers, and debug metrics.
+- The frame pipeline follows a standard input → update → render loop.
+- Keep input collection and gameplay state mutation in update; keep rendering as a separate pass that consumes state.
+- Movement/friction uses Doom-style per-tick friction converted and scaled for frame-rate-independent behavior.
 
-Everything is in `src/main.odin` as `package main`. The structure:
+## Coding Style & Naming Conventions
+- Use spaces (4-space indent), not tabs (`.editorconfig`, `odinfmt.json`).
+- `odinfmt` config is authoritative (`character_width=200`, `sort_includes`, `inline_single_stmt_case`).
+- Keep naming consistent with surrounding code in `src/main.odin`.
+- Types/enums use `PascalCase` (example: `GameState`, `WeaponType`).
+- Procedures/locals may use snake_case where already established.
+- Prefer scoped blocks (`{ // Camera ... }`) to group related logic inside larger procedures.
+- Avoid one-off helper procedures when scoped blocks keep related logic easier to maintain in-place.
+- Keep static data tables (`VizDB`, `WeaponDB`) centralized and update them atomically with gameplay changes.
+- Keep game data (for example, weapon/enemy balance) baked into source code, not external config files.
+- `#+feature dynamic-literals` is enabled in `src/main.odin`.
 
-- **`Entity`** — central data type with `id`, `type` (`EntityType` enum), `pos`/`vel`/`radius`, `aim_angle`, `max_vel`, `accel`
-- **`EntityType`** — `Player`, `Enemy`, `Crosshair`
-- **`VisualData`** / **`VizDB`** — static lookup table (`[EntityType]VisualData`) mapping entity types to textures and animation parameters (bob, squash/stretch). All visual configuration lives here.
-- **`GameState`** (`st`) — global mutable state: render size, DPI scaling, mouse pos, camera, and the `entities` dynamic array
-- **`main()`** — single game loop: input → physics → render
+## Testing Guidelines
+- Prefer Odin built-in tests with `@(test)` procedures; run with `cd bin && odin test ../src`.
+- Focus tests on deterministic gameplay logic (state transitions, damage math, reload/switch timing).
+- Use descriptive test names that state behavior, e.g., `weapon_switch_blocks_fire`.
 
-Physics uses Doom-style per-tick friction applied continuously via `math.pow(friction_per_tick, 35.0)` to convert to per-second values, then scaled by `GetFrameTime()` for frame-rate independence.
+## Commit & Pull Request Guidelines
+- Follow history style: `<scope>: <concise summary>` (examples: `fix: ...`, `weapons: ...`, `doc: ...`, `res: ...`).
+- Keep commits focused; separate gameplay logic, assets, and docs when practical.
+- PRs should state what changed and why.
+- Include commands run (`odin check`, `odin test`, build/run smoke check).
+- Add screenshot/video for visual or audio-impacting changes.
 
-## Code Style
-
-- 4-space indentation (spaces, not tabs — despite Odin convention)
-- `odinfmt` config: 200-char line width, `sort_includes`, `inline_single_stmt_case`
-- Scoped blocks (`{ // Camera ... }`) are used to visually group related logic within `main()`
-- `#+feature dynamic-literals` is enabled at the top of the file
+## Workflow Notes
+- For gameplay tasks, default to one task at a time and pause for playtest feedback before starting the next.
+- Update `doc/TODO.md` after each task (status/priority changes and Recently Completed entries when done).
+- Keep `AGENTS.md` and `CLAUDE.md` aligned; when one changes, mirror the same repo-level guidance in the other.
 
 ## Tooling
-
-- **Language server:** `ols` (Odin Language Server) — configured in `ols.json`
-- **Formatter:** `odinfmt` — configured in `odinfmt.json`
-- **Watch mode:** `tools/watch.sh` uses `inotifywait` (Linux only) to re-run on `.odin` file changes
+- Formatter: `odinfmt` (configured in `odinfmt.json`).
