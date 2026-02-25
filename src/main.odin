@@ -608,10 +608,18 @@ update_gameplay :: proc() {
         }
     }
 
-    {     // Particles
+    {     // Damage, collisions, and cleanup (co-located)
         dt := rl.GetFrameTime()
-        i := 0
-        for i < len(st.particles) {
+
+        // Shared helper to keep particle and entity-contact damage feedback consistent.
+        apply_damage_with_flash := proc(e: ^Entity, damage: f32, flash_secs: f32) {
+            if damage <= 0 {return}
+            e.health -= damage
+            e.hit_flash = max(e.hit_flash, flash_secs)
+        }
+
+        // Particle movement + particle damage impacts
+        for i := 0; i < len(st.particles); {
             p := &st.particles[i]
             p.pos += p.vel * dt
             p.age += dt
@@ -619,8 +627,7 @@ update_gameplay :: proc() {
             if p.damage > 0 && !dead {
                 for &e in st.entities {
                     if e.type == .Enemy && linalg.length(e.pos - p.pos) < e.radius + p.radius {
-                        e.health -= p.damage
-                        e.hit_flash = max(e.hit_flash, 0.16)
+                        apply_damage_with_flash(&e, p.damage, 0.16)
                         spawn_hit_sparks(p.pos, p.color, 5)
                         dead = true
                         break
@@ -629,36 +636,28 @@ update_gameplay :: proc() {
             }
             if dead {unordered_remove(&st.particles, i)} else {i += 1}
         }
-    }
 
-    {     // Collision
-        dt := rl.GetFrameTime()
+        // Entity contact damage
         for i in 0 ..< len(st.entities) {
             for j in i + 1 ..< len(st.entities) {
                 a := &st.entities[i]
                 b := &st.entities[j]
                 if linalg.length(b.pos - a.pos) < a.radius + b.radius {
-                    a.health -= b.damage * dt
-                    b.health -= a.damage * dt
-                    if b.damage > 0 {a.hit_flash = max(a.hit_flash, 0.1)}
-                    if a.damage > 0 {b.hit_flash = max(b.hit_flash, 0.1)}
+                    apply_damage_with_flash(a, b.damage * dt, 0.1)
+                    apply_damage_with_flash(b, a.damage * dt, 0.1)
                 }
             }
         }
-    }
 
-    {     // Damage feedback decay
-        dt := rl.GetFrameTime()
+        // Damage feedback decay
         for &e in st.entities {
             if e.hit_flash > 0 {
                 e.hit_flash = max(0, e.hit_flash - dt)
             }
         }
-    }
 
-    {     // Remove dead entities
-        i := 0
-        for i < len(st.entities) {
+        // Remove dead enemies
+        for i := 0; i < len(st.entities); {
             if st.entities[i].type == .Enemy && st.entities[i].health <= 0 {
                 unordered_remove(&st.entities, i)
             } else {

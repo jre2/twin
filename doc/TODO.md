@@ -8,6 +8,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Add lightweight profiling/debug overlays for entity counts, frame timings, and particle counts.
 
 ## Next
+- [ ] Medium priority: do a full loop-style pass across the codebase; make loops more idiomatic Odin (`for x in xs` where feasible, cleaner index loops where mutation/removal requires indices).
 - [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
 - [ ] Add baseline enemy AI: chase player, keep spacing, and apply simple steering to avoid clumping.
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
@@ -21,6 +22,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Revisit weapon FSM structure to reduce `Idle`/`Firing` coupling while preserving no-frame-delay first shot behavior.
 
 ## Recently Completed
+- [x] Cleaned up non-idiomatic index loops in damage/cleanup paths to idiomatic Odin `for i := ...` form.
 - [x] Added reload minigame during `ClipInsert` with perfect timing that instantly completes insert.
 - [x] Added perfect-reload fanfare (SFX + VFX + HUD `PERFECT CLIP` state).
 - [x] VFX updates like camera shake decay are now separated from weapon logic.
