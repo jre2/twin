@@ -13,6 +13,8 @@ DEBUG_MEMORY :: true
 FrictionGroundPerTick :: 0.90625 // Doom style, per 35hz tic, applied to current speed
 FrictionGroundPerSec: f32 = math.pow(f32(FrictionGroundPerTick), 35.0)
 FrictionSlowdownAir :: 0.9727 // doom style, per 35hz tic, applied to current speed
+CannonChargeSfxSecs :: 4.728 // measured via afinfo
+CannonFireSfxSecs   :: 7.752 // measured via afinfo
 
 Vec2 :: [2]f32
 Vec2i :: [2]i32
@@ -295,7 +297,8 @@ WeaponDB := [WeaponType]WeaponDef {
         name = "Particle Cannon", sound_path = "res/cannon_fire.mp3", charge_sound_path = "res/cannon_charge.mp3",
         clip_size = 3, max_ammo = 9,
         kickback_impulse = 47, shake_impulse = 55,
-        charge_time = 3.5, cooldown_time = 2.0, beam_half_width = 60, beam_damage = 300, beam_duration = 1.5,
+        // Keep timings close to SFX envelope: charge ~= charge SFX, beam+cooldown ~= fire SFX.
+        charge_time = CannonChargeSfxSecs * 0.98, cooldown_time = CannonFireSfxSecs * 0.35, beam_half_width = 60, beam_damage = 300, beam_duration = CannonFireSfxSecs * 0.63,
         switch_time = 0.6, clip_drop_time = 0.2, clip_insert_time = 0.8,
     },
 }

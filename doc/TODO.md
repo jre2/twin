@@ -8,13 +8,13 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [x] Clean up asset/bootstrap setup into dedicated init and cleanup procedures.
 - [x] Refactor `main()` into explicit `update_gameplay()` and `render_frame()` systems.
 - [x] Audit weapon FSM transitions and move ballistic bullet emission fully under `Firing` state control.
+- [x] Align cannon charge/beam/cooldown timing with current SFX durations.
 
 ## Project Direction
 - [ ] Keep weapon/enemy balance data baked directly into program source.
 - [ ] Do not move balance data to an external config file; Odin compile times are fast enough for direct code iteration.
 
 ## Now
-- [ ] Align cannon charge/beam/cooldown timing with SFX durations for coherent feel.
 - [ ] Revisit weapon FSM structure to reduce `Idle`/`Firing` coupling while preserving no-frame-delay first shot behavior.
 - [ ] Add a debug toggle to compare two ballistic fire models:
 - [ ] Mode A: immediate shot on click, then fire interval behaves as cooldown.
