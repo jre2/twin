@@ -3,7 +3,6 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Add a reload minigame during `ClipDrop`: show a moving cursor on the reload bar with a random highlighted success window; pressing `R` inside the window should skip remaining clip-eject time and enter `ClipInsert` immediately, with a faster insert duration bonus.
 - [ ] Not enough Entity update is unified. Particles have their own collision detection but we do a generic Entity x Entity loop later. Similar for handling death and removal of entities.
 - [ ] Collision detection should use squared distance so we can avoid sqrt(), as a performance gain. Odin core library has a variant for this.
 - [ ] Add lightweight profiling/debug overlays for entity counts, frame timings, and particle counts.
@@ -22,6 +21,8 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Revisit weapon FSM structure to reduce `Idle`/`Firing` coupling while preserving no-frame-delay first shot behavior.
 
 ## Recently Completed
+- [x] Added reload minigame during `ClipInsert` with perfect timing that instantly completes insert.
+- [x] Added perfect-reload fanfare (SFX + VFX + HUD `PERFECT CLIP` state).
 - [x] VFX updates like camera shake decay are now separated from weapon logic.
 - [x] Replace purely visual kickback with movement impulse kickback (player first, optional enemy support).
 - [x] Improve combat feedback with hit flash and impact sparks.

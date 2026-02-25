@@ -15,6 +15,11 @@ FrictionGroundPerSec: f32 = math.pow(f32(FrictionGroundPerTick), 35.0)
 FrictionSlowdownAir :: 0.9727 // doom style, per 35hz tic, applied to current speed
 CannonChargeSfxSecs :: 4.728 // measured via afinfo
 CannonFireSfxSecs   :: 7.752 // measured via afinfo
+ReloadMiniWindowMinPermille: i32 = 140
+ReloadMiniWindowMaxPermille: i32 = 220
+ReloadMiniWindowPadPermille: i32 = 80
+PerfectReloadFxSecs: f32 = 0.38
+PerfectReloadSfxPath :: "res/reload_perfect.mp3"
 
 Vec2 :: [2]f32
 Vec2i :: [2]i32
@@ -99,6 +104,11 @@ WeaponInstance :: struct {
     charge_sfx_playing: bool, // cannon: whether charge sound is playing
     pending_weapon:     WeaponType, // target weapon during Switching state
     fire_queued:        bool, // windup mode: latches a pending shot request
+    reload_window_start: f32, // clip insert minigame timing window [0..1]
+    reload_window_end:   f32, // clip insert minigame timing window [0..1]
+    reload_window_spent: bool, // whether player already attempted the minigame this cycle
+    reload_perfect_this_insert: bool, // whether current clip insert got a perfect timing hit
+    perfect_reload_clip: bool, // whether the currently loaded clip was perfectly reloaded
     muzzle_flash_timer: f32, // visual only: decays independently
 }
 Particle :: struct {
@@ -126,7 +136,10 @@ GameState :: struct {
     weapons:           [WeaponType]WeaponInstance,
     particles:         [dynamic]Particle,
     camera_shake:      f32,
+    perfect_reload_fx_timer: f32,
 }
+
+PerfectReloadSfx: rl.Sound
 
 vec2 :: proc(v: Vec2i) -> Vec2 {return Vec2{f32(v.x), f32(v.y)}}
 vec2i :: proc(v: Vec2) -> Vec2i {return Vec2i{i32(v.x), i32(v.y)}}
@@ -150,6 +163,23 @@ enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32
     inst.state_duration = duration
 }
 
+enter_clip_insert :: proc(inst: ^WeaponInstance, def: WeaponDef) {
+    window_w := rl.GetRandomValue(ReloadMiniWindowMinPermille, ReloadMiniWindowMaxPermille)
+    start_min := ReloadMiniWindowPadPermille
+    start_max := 1000 - ReloadMiniWindowPadPermille - window_w
+    if start_max < start_min {start_max = start_min}
+    window_start := rl.GetRandomValue(start_min, start_max)
+    inst.reload_window_start = f32(window_start) / 1000.0
+    inst.reload_window_end = f32(window_start + window_w) / 1000.0
+    inst.reload_window_spent = false
+    inst.reload_perfect_this_insert = false
+    enter_state(inst, .ClipInsert, def.clip_insert_time)
+}
+
+enter_clip_drop :: proc(inst: ^WeaponInstance, def: WeaponDef) {
+    enter_state(inst, .ClipDrop, def.clip_drop_time)
+}
+
 apply_player_kickback :: proc(aim_rad: f32, impulse: f32) {
     // Convert weapon impulse into backward player velocity.
     dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
@@ -167,6 +197,22 @@ spawn_hit_sparks :: proc(origin: Vec2, color: rl.Color, count: int = 5) {
             radius = f32(rl.GetRandomValue(2, 4)),
             color = color,
             max_age = f32(rl.GetRandomValue(8, 18)) / 100.0,
+        })
+    }
+}
+
+spawn_perfect_reload_fanfare :: proc(origin: Vec2) {
+    for i in 0 ..< 18 {
+        ang := math.to_radians(f32(i) * (360.0 / 18.0)) + f32(rl.GetRandomValue(-120, 120)) / 1000.0
+        speed := f32(rl.GetRandomValue(280, 620))
+        vel := Vec2{math.cos(ang), math.sin(ang)} * speed
+        col := rl.YELLOW if i % 2 == 0 else rl.LIME
+        append(&st.particles, Particle{
+            pos = origin,
+            vel = vel,
+            radius = f32(rl.GetRandomValue(3, 6)),
+            color = col,
+            max_age = f32(rl.GetRandomValue(22, 55)) / 100.0,
         })
     }
 }
@@ -250,6 +296,7 @@ init_assets :: proc() {
             wep.charge_sound = rl.LoadSound(strings.clone_to_cstring(wep.charge_sound_path, context.temp_allocator))
         }
     }
+    PerfectReloadSfx = rl.LoadSound(strings.clone_to_cstring(PerfectReloadSfxPath, context.temp_allocator))
 }
 
 init_game_state :: proc() {
@@ -275,6 +322,7 @@ cleanup_resources :: proc() {
         rl.UnloadSound(wep.sound)
         rl.UnloadSound(wep.charge_sound)
     }
+    rl.UnloadSound(PerfectReloadSfx)
     rl.CloseAudioDevice()
     rl.CloseWindow()
 }
@@ -290,21 +338,21 @@ WeaponDB := [WeaponType]WeaponDef {
         fire_interval = 0.065, clip_size = 30, max_ammo = 180,
         bullet_damage = 5, bullet_speed = 800, bullet_spread = 0.4, bullet_radius = 4, bullet_color = rl.YELLOW,
         kickback_impulse = 7, shake_impulse = 6, flash_size = 24, flash_duration = 0.05,
-        switch_time = 0.3, clip_drop_time = 0.15, clip_insert_time = 0.4,
+        switch_time = 0.3, clip_drop_time = 0.3, clip_insert_time = 0.8,
     },
     .Rifle  = WeaponDef{
         name = "Rifle", sound_path = "res/rifle.mp3",
         fire_interval = 0.3, clip_size = 10, max_ammo = 60,
         bullet_damage = 25, bullet_speed = 1200, bullet_spread = 0.15, bullet_radius = 5, bullet_color = rl.RAYWHITE,
         kickback_impulse = 33, shake_impulse = 21, flash_size = 58, flash_duration = 0.12,
-        switch_time = 0.4, clip_drop_time = 0.15, clip_insert_time = 0.5,
+        switch_time = 0.4, clip_drop_time = 0.3, clip_insert_time = 1.0,
     },
     .Tesla  = WeaponDef{
         name = "Tesla Gun", sound_path = "res/tesla_gun.mp3",
         fire_interval = 0.2, clip_size = 20, max_ammo = 100,
         bullet_damage = 15, bullet_speed = 1000, bullet_spread = 0.25, bullet_radius = 4, bullet_color = rl.SKYBLUE,
         kickback_impulse = 12, shake_impulse = 10, flash_size = 0, flash_duration = 0.1,
-        switch_time = 0.35, clip_drop_time = 0.15, clip_insert_time = 0.35,
+        switch_time = 0.35, clip_drop_time = 0.3, clip_insert_time = 0.7,
     },
     .Cannon = WeaponDef{
         name = "Particle Cannon", sound_path = "res/cannon_fire.mp3", charge_sound_path = "res/cannon_charge.mp3",
@@ -312,7 +360,7 @@ WeaponDB := [WeaponType]WeaponDef {
         kickback_impulse = 47, shake_impulse = 55,
         // Keep timings close to SFX envelope: charge ~= charge SFX, beam+cooldown ~= fire SFX.
         charge_time = CannonChargeSfxSecs * 0.98, cooldown_time = CannonFireSfxSecs * 0.35, beam_half_width = 60, beam_damage = 300, beam_duration = CannonFireSfxSecs * 0.63,
-        switch_time = 0.6, clip_drop_time = 0.2, clip_insert_time = 0.8,
+        switch_time = 0.6, clip_drop_time = 0.4, clip_insert_time = 1.6,
     },
 }
 st := GameState {
@@ -412,9 +460,9 @@ update_gameplay :: proc() {
             } else if rl.IsKeyPressed(.R) {
                 // Reload: R key — drop clip first, then insert
                 if inst.ammo_in_clip > 0 {
-                    enter_state(inst, .ClipDrop, def.clip_drop_time)
+                    enter_clip_drop(inst, def)
                 } else if inst.ammo_reserve > 0 {
-                    enter_state(inst, .ClipInsert, def.clip_insert_time)
+                    enter_clip_insert(inst, def)
                 }
             } else {
                 // Firing (per weapon type)
@@ -455,17 +503,30 @@ update_gameplay :: proc() {
             if inst.state_timer >= inst.state_duration {
                 inst.ammo_in_clip = 0
                 if st.auto_reload && inst.ammo_reserve > 0 {
-                    enter_state(inst, .ClipInsert, def.clip_insert_time)
+                    enter_clip_insert(inst, def)
                 } else {
                     enter_state(inst, .Idle, 0)
                 }
             }
 
         case .ClipInsert:
+            if !inst.reload_window_spent && rl.IsKeyPressed(.R) {
+                inst.reload_window_spent = true
+                cursor := clamp(inst.state_timer / inst.state_duration, 0, 1)
+                if cursor >= inst.reload_window_start && cursor <= inst.reload_window_end {
+                    inst.reload_perfect_this_insert = true
+                    st.perfect_reload_fx_timer = max(st.perfect_reload_fx_timer, PerfectReloadFxSecs)
+                    st.camera_shake = max(st.camera_shake, 18)
+                    spawn_perfect_reload_fanfare(st.player.pos)
+                    rl.PlaySound(PerfectReloadSfx)
+                    inst.state_timer = inst.state_duration // perfect timing completes insert immediately
+                }
+            }
             if inst.state_timer >= inst.state_duration {
                 new_count := min(def.clip_size, inst.ammo_reserve)
                 inst.ammo_in_clip = new_count
                 inst.ammo_reserve -= new_count
+                inst.perfect_reload_clip = inst.reload_perfect_this_insert
                 enter_state(inst, .Idle, 0)
             }
 
@@ -541,6 +602,9 @@ update_gameplay :: proc() {
             st.camera_shake *= math.pow(f32(0.78), dt * 60)
         } else {
             st.camera_shake = 0
+        }
+        if st.perfect_reload_fx_timer > 0 {
+            st.perfect_reload_fx_timer = max(0, st.perfect_reload_fx_timer - dt)
         }
     }
 
@@ -725,6 +789,11 @@ render_frame :: proc() {
     if cannon_inst.state == .BeamActive && cannon_inst.state_timer < 0.26 {
         rl.DrawRectangle(0, 0, i32(st.render_size.x), i32(st.render_size.y), rl.Fade(rl.RAYWHITE, max(f32(0), 1 - cannon_inst.state_timer / 0.26)))
     }
+    if st.perfect_reload_fx_timer > 0 {
+        t := clamp(st.perfect_reload_fx_timer / PerfectReloadFxSecs, 0, 1)
+        rl.DrawRectangle(0, 0, i32(st.render_size.x), i32(st.render_size.y), rl.Fade(rl.LIME, 0.08 * t))
+        draw_text({st.render_size.x / 2 - 110, st.render_size.y / 2 - 120}, 28, "PERFECT RELOAD!")
+    }
 
     // HUD
     hud_def  := WeaponDB[st.current_weapon]
@@ -738,6 +807,10 @@ render_frame :: proc() {
     case .ClipInsert:  draw_text({10, 50}, 20, "%v: RELOADING...", hud_def.name)
     case .Idle, .Firing, .Charging, .BeamActive, .Cooldown:
         draw_text({10, 50}, 20, "%v: %d / %d", hud_def.name, hud_inst.ammo_in_clip, hud_inst.ammo_reserve)
+    }
+    draw_text({10, 70}, 18, "PERFECT CLIP %v", hud_inst.perfect_reload_clip)
+    if hud_inst.state == .ClipInsert {
+        draw_text({10, 90}, 18, "RELOAD MINIGAME: press R in highlighted window")
     }
 
     // Progress bar for timed states
@@ -780,6 +853,13 @@ render_frame :: proc() {
         cy := st.render_size.y - 60
         rl.DrawRectangle(i32(cx), i32(cy), i32(barw), i32(barh), rl.DARKGRAY)
         rl.DrawRectangle(i32(cx), i32(cy), i32(barw * bar_frac), i32(barh), bar_color)
+        if hud_inst.state == .ClipInsert {
+            zone_x := cx + barw * clamp(hud_inst.reload_window_start, 0, 1)
+            zone_w := barw * clamp(hud_inst.reload_window_end - hud_inst.reload_window_start, 0, 1)
+            rl.DrawRectangle(i32(zone_x), i32(cy), i32(zone_w), i32(barh), rl.Fade(rl.GREEN, 0.45))
+            cursor_x := cx + barw * clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+            rl.DrawLineEx({cursor_x, cy - 4}, {cursor_x, cy + barh + 4}, 2, rl.RAYWHITE)
+        }
         rl.DrawRectangleLines(i32(cx), i32(cy), i32(barw), i32(barh), rl.RAYWHITE)
         draw_text({cx, cy - 24}, 18, bar_label)
     }
