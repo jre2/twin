@@ -309,7 +309,8 @@ main :: proc() {
     append(&st.entities, Entity{id = len(st.entities), type = .Player, radius = 50, max_vel = {700, 700}, health = 100, max_health = 100})
     append(&st.entities, Entity{id = len(st.entities), type = .Crosshair, radius = 20})
     for _ in 1 ..= 10 {
-        enemy := Entity{id = len(st.entities), type = .Enemy, radius = 50, max_vel = {40, 40}, health = 50, max_health = 50, damage = 10}
+        pos := Vec2{f32(rl.GetRandomValue(-750, 750)), f32(rl.GetRandomValue(-350, 350))}
+        enemy := Entity{id = len(st.entities), type = .Enemy, radius = 50, max_vel = {40, 40}, health = 50, max_health = 50, damage = 10, pos = pos}
         append(&st.entities, enemy)
     }
     st.player = &st.entities[0]
