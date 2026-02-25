@@ -3,20 +3,19 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
 - [ ] Add baseline enemy AI: chase player, keep spacing, and apply simple steering to avoid clumping.
-- [ ] Store `dt` on `GameState` once per frame and use `st.dt` everywhere instead of repeated `GetFrameTime()` calls.
-- [ ] Add focused regression tests for weapon/reload transitions (especially `ClipDrop`/`ClipInsert`, perfect timing path, and fire-mode toggle behavior).
-- [ ] Implement a real gameplay effect for `perfect_reload_clip` (currently HUD/state only).
-- [ ] Empty-clip auto-reload: when firing empties the clip, auto-chain into `ClipDrop` → `ClipInsert`.
+- [ ] Enemy movement variety (ranged strafers, melee rushers) once baseline chase AI exists.
+- [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 
 ## Next
-- [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
+- [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
 - [ ] Player death VFX and respawn animation (depends on game flow states).
+- [ ] Store `dt` on `GameState` once per frame and use `st.dt` everywhere instead of repeated `GetFrameTime()` calls.
+- [ ] Damage number popups (floating text particles on hit showing damage dealt).
+- [ ] Empty-clip auto-reload: when firing empties the clip, auto-chain into `ClipDrop` → `ClipInsert`.
+- [ ] Implement a real gameplay effect for `perfect_reload_clip` (currently HUD/state only).
 - [ ] Finalize the unified damage/collision/cleanup section so particle and entity damage rules stay co-located and evolve together.
 - [ ] Prevent enemy-vs-enemy collision damage; keep friendly fire enabled for enemy-fired projectiles.
-- [ ] Enemy movement variety (ranged strafers, melee rushers) once baseline chase AI exists.
-- [ ] Damage number popups (floating text particles on hit showing damage dealt).
 - [ ] Add pickup/ammo economy hooks to support longer runs.
 - [ ] Add a simple pause/settings screen (audio sliders, controls legend, restart button), including controls for toggles like debug overlay and fire mode.
 - [ ] Full loop-style pass across the codebase; make loops more idiomatic Odin (`for x in xs` where feasible, cleaner index loops where mutation/removal requires indices).
@@ -30,6 +29,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Added regression tests for weapon/reload FSM: extracted `calc_reload_action`, `calc_clip_insert_ammo`, `check_reload_window` as testable procs with 12 tests covering state entry, ammo math, reload decisions, and perfect reload window.
 - [x] Added lightweight debug/profiling overlay (entity/enemy/particle counts + frame/update/render ms) with `U` toggle.
 - [x] Collision checks now use `linalg.length2` squared-distance comparisons (no sqrt in hot paths).
 - [x] Cleaned up non-idiomatic index loops in damage/cleanup paths to idiomatic Odin `for i := ...` form.

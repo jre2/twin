@@ -184,6 +184,24 @@ enter_clip_drop :: proc(inst: ^WeaponInstance, def: WeaponDef) {
     enter_state(inst, .ClipDrop, def.clip_drop_time)
 }
 
+ReloadAction :: enum {None, DropClip, InsertClip}
+
+calc_reload_action :: proc(ammo_in_clip: int, ammo_reserve: int) -> ReloadAction {
+    if ammo_in_clip > 0 {return .DropClip}
+    if ammo_reserve > 0 {return .InsertClip}
+    return .None
+}
+
+calc_clip_insert_ammo :: proc(clip_size: int, ammo_reserve: int) -> (new_clip: int, new_reserve: int) {
+    new_clip = min(clip_size, ammo_reserve)
+    new_reserve = ammo_reserve - new_clip
+    return
+}
+
+check_reload_window :: proc(cursor: f32, window_start: f32, window_end: f32) -> bool {
+    return cursor >= window_start && cursor <= window_end
+}
+
 apply_player_kickback :: proc(aim_rad: f32, impulse: f32) {
     // Convert weapon impulse into backward player velocity.
     dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
@@ -465,10 +483,10 @@ update_gameplay :: proc() {
                 enter_state(inst, .Switching, def.switch_time)
             } else if rl.IsKeyPressed(.R) {
                 // Reload: R key — drop clip first, then insert
-                if inst.ammo_in_clip > 0 {
-                    enter_clip_drop(inst, def)
-                } else if inst.ammo_reserve > 0 {
-                    enter_clip_insert(inst, def)
+                switch calc_reload_action(inst.ammo_in_clip, inst.ammo_reserve) {
+                case .DropClip:   enter_clip_drop(inst, def)
+                case .InsertClip: enter_clip_insert(inst, def)
+                case .None:
                 }
             } else {
                 // Firing (per weapon type)
@@ -519,7 +537,7 @@ update_gameplay :: proc() {
             if !inst.reload_window_spent && rl.IsKeyPressed(.R) {
                 inst.reload_window_spent = true
                 cursor := clamp(inst.state_timer / inst.state_duration, 0, 1)
-                if cursor >= inst.reload_window_start && cursor <= inst.reload_window_end {
+                if check_reload_window(cursor, inst.reload_window_start, inst.reload_window_end) {
                     inst.reload_perfect_this_insert = true
                     st.perfect_reload_fx_timer = max(st.perfect_reload_fx_timer, PerfectReloadFxSecs)
                     st.camera_shake = max(st.camera_shake, 18)
@@ -529,9 +547,7 @@ update_gameplay :: proc() {
                 }
             }
             if inst.state_timer >= inst.state_duration {
-                new_count := min(def.clip_size, inst.ammo_reserve)
-                inst.ammo_in_clip = new_count
-                inst.ammo_reserve -= new_count
+                inst.ammo_in_clip, inst.ammo_reserve = calc_clip_insert_ammo(def.clip_size, inst.ammo_reserve)
                 inst.perfect_reload_clip = inst.reload_perfect_this_insert
                 enter_state(inst, .Idle, 0)
             }
@@ -922,4 +938,84 @@ main :: proc() {
         st.debug_frame_ms = rl.GetFrameTime() * 1000.0
     }
     cleanup_resources()
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────────
+
+import "core:testing"
+
+@(test)
+enter_state_sets_fields :: proc(t: ^testing.T) {
+    inst := WeaponInstance{state = .Idle, state_timer = 99, state_duration = 99}
+    enter_state(&inst, .Firing, 0.3)
+    testing.expect_value(t, inst.state, WeaponState.Firing)
+    testing.expect(t, inst.state_timer == 0, "state_timer should be zeroed")
+    testing.expect(t, inst.state_duration == 0.3, "state_duration should match")
+}
+
+@(test)
+enter_clip_drop_uses_weapon_timing :: proc(t: ^testing.T) {
+    def := WeaponDef{clip_drop_time = 0.4}
+    inst := WeaponInstance{state = .Idle}
+    enter_clip_drop(&inst, def)
+    testing.expect_value(t, inst.state, WeaponState.ClipDrop)
+    testing.expect(t, inst.state_duration == 0.4, "duration should match clip_drop_time")
+    testing.expect(t, inst.state_timer == 0, "timer should be zeroed")
+}
+
+@(test)
+clip_insert_full_reserve :: proc(t: ^testing.T) {
+    clip, reserve := calc_clip_insert_ammo(30, 150)
+    testing.expect_value(t, clip, 30)
+    testing.expect_value(t, reserve, 120)
+}
+
+@(test)
+clip_insert_partial_reserve :: proc(t: ^testing.T) {
+    clip, reserve := calc_clip_insert_ammo(30, 12)
+    testing.expect_value(t, clip, 12)
+    testing.expect_value(t, reserve, 0)
+}
+
+@(test)
+clip_insert_zero_reserve :: proc(t: ^testing.T) {
+    clip, reserve := calc_clip_insert_ammo(30, 0)
+    testing.expect_value(t, clip, 0)
+    testing.expect_value(t, reserve, 0)
+}
+
+@(test)
+reload_with_ammo_drops_clip :: proc(t: ^testing.T) {
+    testing.expect_value(t, calc_reload_action(15, 100), ReloadAction.DropClip)
+}
+
+@(test)
+reload_empty_with_reserve_inserts :: proc(t: ^testing.T) {
+    testing.expect_value(t, calc_reload_action(0, 50), ReloadAction.InsertClip)
+}
+
+@(test)
+reload_empty_no_reserve_does_nothing :: proc(t: ^testing.T) {
+    testing.expect_value(t, calc_reload_action(0, 0), ReloadAction.None)
+}
+
+@(test)
+perfect_reload_in_window :: proc(t: ^testing.T) {
+    testing.expect(t, check_reload_window(0.5, 0.4, 0.6), "cursor inside window should hit")
+}
+
+@(test)
+perfect_reload_before_window :: proc(t: ^testing.T) {
+    testing.expect(t, !check_reload_window(0.3, 0.4, 0.6), "cursor before window should miss")
+}
+
+@(test)
+perfect_reload_after_window :: proc(t: ^testing.T) {
+    testing.expect(t, !check_reload_window(0.7, 0.4, 0.6), "cursor after window should miss")
+}
+
+@(test)
+perfect_reload_at_boundaries :: proc(t: ^testing.T) {
+    testing.expect(t, check_reload_window(0.4, 0.4, 0.6), "cursor at start boundary should hit")
+    testing.expect(t, check_reload_window(0.6, 0.4, 0.6), "cursor at end boundary should hit")
 }
