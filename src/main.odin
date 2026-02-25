@@ -313,9 +313,6 @@ main :: proc() {
         enemy := Entity{id = len(st.entities), type = .Enemy, radius = 50, max_vel = {40, 40}, health = 50, max_health = 50, damage = 10, pos = pos}
         append(&st.entities, enemy)
     }
-    st.player = &st.entities[0]
-    st.crosshair = &st.entities[1]
-
     // Initialize weapon ammo
     st.weapons[.SMG]    = WeaponInstance{ammo_in_clip = 30,  ammo_reserve = 150}
     st.weapons[.Rifle]  = WeaponInstance{ammo_in_clip = 10,  ammo_reserve = 50}
@@ -324,6 +321,18 @@ main :: proc() {
 
     for !rl.WindowShouldClose() {
         free_all(context.temp_allocator)
+
+        {     // Refresh entity pointers (entity list may have changed last frame)
+            st.player = nil
+            st.crosshair = nil
+            for &e in st.entities {
+                switch e.type {
+                case .Player:    st.player = &e
+                case .Crosshair: st.crosshair = &e
+                case .Enemy:
+                }
+            }
+        }
 
         {     // Windowing and inputs that need correction before use
             st.render_size = vec2({rl.GetRenderWidth(), rl.GetRenderHeight()})
@@ -451,6 +460,17 @@ main :: proc() {
                         a.health -= b.damage * dt
                         b.health -= a.damage * dt
                     }
+                }
+            }
+        }
+
+        {     // Remove dead entities
+            i := 0
+            for i < len(st.entities) {
+                if st.entities[i].type == .Enemy && st.entities[i].health <= 0 {
+                    unordered_remove(&st.entities, i)
+                } else {
+                    i += 1
                 }
             }
         }
