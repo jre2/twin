@@ -42,6 +42,7 @@ Entity :: struct {
     health:     f32,
     max_health: f32,
     damage:     f32, // contact damage per second
+    hit_flash:  f32, // seconds remaining for damage feedback
     cant_volitional_move: bool, // whether entity can move of their own volition; momentum and knockback are not affected
 }
 WeaponType :: enum {SMG, Rifle, Tesla, Cannon}
@@ -127,12 +128,12 @@ draw_text :: proc(pos: Vec2, size: f32, fmtstring: string, args: ..any) {
     cs := strings.clone_to_cstring(s, context.temp_allocator)
     rl.DrawText(cs, i32(pos.x), i32(pos.y), i32(size), rl.RAYWHITE)
 }
-draw_tex :: proc(tex: rl.Texture2D, pos: Vec2, scale: Vec2, angle: f32, flipH: bool = false) {
+draw_tex :: proc(tex: rl.Texture2D, pos: Vec2, scale: Vec2, angle: f32, flipH: bool = false, tint: rl.Color = rl.WHITE) {
     src_size := vec2({tex.width, tex.height})
     src_rect := rl.Rectangle{0, 0, src_size.x if !flipH else -src_size.x, src_size.y}
     dest_size := src_size * scale
     dest_rect := rl.Rectangle{pos.x, pos.y, dest_size.x, dest_size.y}
-    rl.DrawTexturePro(tex, src_rect, dest_rect, dest_size / 2, angle, rl.WHITE)
+    rl.DrawTexturePro(tex, src_rect, dest_rect, dest_size / 2, angle, tint)
 }
 
 enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32) {
@@ -145,6 +146,21 @@ apply_player_kickback :: proc(aim_rad: f32, impulse: f32) {
     // Convert weapon impulse into backward player velocity.
     dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
     st.player.vel -= dir * impulse * 8.0
+}
+
+spawn_hit_sparks :: proc(origin: Vec2, color: rl.Color, count: int = 5) {
+    for _ in 0 ..< count {
+        ang := f32(rl.GetRandomValue(0, 6283)) / 1000.0
+        speed := f32(rl.GetRandomValue(180, 520))
+        vel := Vec2{math.cos(ang), math.sin(ang)} * speed
+        append(&st.particles, Particle{
+            pos = origin,
+            vel = vel,
+            radius = f32(rl.GetRandomValue(2, 4)),
+            color = color,
+            max_age = f32(rl.GetRandomValue(8, 18)) / 100.0,
+        })
+    }
 }
 
 fire_bullet :: proc(inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32) {
@@ -458,6 +474,10 @@ main :: proc() {
                     if along < 0 {continue}
                     if linalg.length(to_e - beam_dir * along) < def.beam_half_width + e.radius {
                         e.health -= def.beam_damage * dt
+                        e.hit_flash = max(e.hit_flash, 0.06)
+                        if rl.GetRandomValue(0, 100) < 10 {
+                            spawn_hit_sparks(e.pos, rl.YELLOW, 2)
+                        }
                     }
                 }
                 if inst.state_timer >= inst.state_duration {
@@ -487,6 +507,8 @@ main :: proc() {
                     for &e in st.entities {
                         if e.type == .Enemy && linalg.length(e.pos - p.pos) < e.radius + p.radius {
                             e.health -= p.damage
+                            e.hit_flash = max(e.hit_flash, 0.16)
+                            spawn_hit_sparks(p.pos, p.color, 5)
                             dead = true
                             break
                         }
@@ -505,7 +527,18 @@ main :: proc() {
                     if linalg.length(b.pos - a.pos) < a.radius + b.radius {
                         a.health -= b.damage * dt
                         b.health -= a.damage * dt
+                        if b.damage > 0 {a.hit_flash = max(a.hit_flash, 0.1)}
+                        if a.damage > 0 {b.hit_flash = max(b.hit_flash, 0.1)}
                     }
+                }
+            }
+        }
+
+        {     // Damage feedback decay
+            dt := rl.GetFrameTime()
+            for &e in st.entities {
+                if e.hit_flash > 0 {
+                    e.hit_flash = max(0, e.hit_flash - dt)
                 }
             }
         }
@@ -559,8 +592,17 @@ main :: proc() {
                 angle: f32 = 0
                 if st.sprite_aim_rotate {angle = e.aim_angle}
 
-                draw_tex(viz.texture, pos, scale, angle, flipH)
+                tint := rl.WHITE
+                if e.hit_flash > 0.01 {
+                    tint = rl.Color{255, 165, 165, 255}
+                }
+
+                draw_tex(viz.texture, pos, scale, angle, flipH, tint)
                 rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), e.radius, rl.GREEN)
+                if e.hit_flash > 0 {
+                    flash_alpha := clamp(e.hit_flash / 0.18, 0, 1)
+                    rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), e.radius + 6 * flash_alpha, rl.Fade(rl.ORANGE, flash_alpha))
+                }
 
                 if e.type == .Player || e.type == .Enemy {     // Health bar
                     bar_w := e.radius * 2
