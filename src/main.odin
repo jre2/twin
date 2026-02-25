@@ -137,6 +137,10 @@ GameState :: struct {
     particles:         [dynamic]Particle,
     camera_shake:      f32,
     perfect_reload_fx_timer: f32,
+    show_debug_overlay: bool,
+    debug_update_ms:    f32,
+    debug_render_ms:    f32,
+    debug_frame_ms:     f32,
 }
 
 PerfectReloadSfx: rl.Sound
@@ -368,6 +372,7 @@ st := GameState {
     flip_by_aim         = true,
     auto_reload         = false,
     ballistic_fire_mode = .ImmediateCooldown,
+    show_debug_overlay  = false,
 }
 
 update_gameplay :: proc() {
@@ -393,6 +398,7 @@ update_gameplay :: proc() {
         if rl.IsKeyPressed(.H) {
             st.ballistic_fire_mode = .WindupDelay if st.ballistic_fire_mode == .ImmediateCooldown else .ImmediateCooldown
         }
+        if rl.IsKeyPressed(.U) {st.show_debug_overlay = !st.show_debug_overlay}
     }
 
     {     // Camera
@@ -866,6 +872,16 @@ render_frame :: proc() {
         draw_text({cx, cy - 24}, 18, bar_label)
     }
 
+    if st.show_debug_overlay {
+        enemy_count := 0
+        for e in st.entities {
+            if e.type == .Enemy {enemy_count += 1}
+        }
+        draw_text({10, 110}, 18, "[U] DEBUG OVERLAY")
+        draw_text({10, 130}, 18, "ENTITIES %d | ENEMIES %d | PARTICLES %d", len(st.entities), enemy_count, len(st.particles))
+        draw_text({10, 150}, 18, "FRAME %.2fms | UPDATE %.2fms | RENDER %.2fms", st.debug_frame_ms, st.debug_update_ms, st.debug_render_ms)
+    }
+
     rl.EndDrawing()
 }
 
@@ -897,8 +913,13 @@ main :: proc() {
 
     for !rl.WindowShouldClose() {
         free_all(context.temp_allocator)
+        update_begin := rl.GetTime()
         update_gameplay()
+        st.debug_update_ms = f32((rl.GetTime() - update_begin) * 1000.0)
+        render_begin := rl.GetTime()
         render_frame()
+        st.debug_render_ms = f32((rl.GetTime() - render_begin) * 1000.0)
+        st.debug_frame_ms = rl.GetFrameTime() * 1000.0
     }
     cleanup_resources()
 }

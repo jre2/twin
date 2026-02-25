@@ -4,7 +4,6 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 
 ## Now
 - [ ] Not enough Entity update is unified. Particles have their own collision detection but we do a generic Entity x Entity loop later. Similar for handling death and removal of entities.
-- [ ] Add lightweight profiling/debug overlays for entity counts, frame timings, and particle counts.
 
 ## Next
 - [ ] Medium priority: do a full loop-style pass across the codebase; make loops more idiomatic Odin (`for x in xs` where feasible, cleaner index loops where mutation/removal requires indices).
@@ -22,6 +21,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Consider fully separating Entities and Particles. Bullets become Entities, particles have no collision, etc
 
 ## Recently Completed
+- [x] Added lightweight debug/profiling overlay (entity/enemy/particle counts + frame/update/render ms) with `U` toggle.
 - [x] Collision checks now use `linalg.length2` squared-distance comparisons (no sqrt in hot paths).
 - [x] Cleaned up non-idiomatic index loops in damage/cleanup paths to idiomatic Odin `for i := ...` form.
 - [x] Added reload minigame during `ClipInsert` with perfect timing that instantly completes insert.
