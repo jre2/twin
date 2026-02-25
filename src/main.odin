@@ -101,6 +101,7 @@ GameState :: struct {
     player:            ^Entity,
     crosshair:         ^Entity,
     sprite_aim_rotate: bool,
+    flip_by_aim:       bool, // true = flip sprite based on aim direction; false = flip based on movement
     current_weapon:    WeaponType,
     weapons:           [WeaponType]WeaponInstance,
     particles:         [dynamic]Particle,
@@ -327,6 +328,7 @@ main :: proc() {
             st.dpi_scaling = rl.GetWindowScaleDPI()
             st.mouse_pos = rl.GetMousePosition() * st.dpi_scaling // not DPI aware so we must fix
             if rl.IsKeyPressed(.Y) {st.sprite_aim_rotate = !st.sprite_aim_rotate}
+            if rl.IsKeyPressed(.T) {st.flip_by_aim = !st.flip_by_aim}
         }
 
         {     // Camera
@@ -469,7 +471,7 @@ main :: proc() {
                 viz := VizDB[e.type]
                 pos := e.pos
                 scale := viz.tex_scale * e.radius
-                flipH := e.vel.x < 0
+                flipH := (math.abs(e.aim_angle) > 90) if st.flip_by_aim else (e.vel.x < 0)
                 angle: f32 = 0
                 if st.sprite_aim_rotate {angle = e.aim_angle}
 
