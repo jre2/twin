@@ -194,6 +194,48 @@ draw_cannon_beam :: proc(beam_angle_deg: f32, beam_timer: f32) {
     rl.DrawTriangle(beam_end - perp * cw, origin - perp * cw, origin + perp * cw, cc)
 }
 
+init_assets :: proc() {
+    for &viz in VizDB {
+        path := strings.clone_to_cstring(viz.tex_path, context.temp_allocator)
+        viz.texture = rl.LoadTexture(path)
+    }
+    for &wep in WeaponDB {
+        if wep.sound_path != "" {
+            wep.sound = rl.LoadSound(strings.clone_to_cstring(wep.sound_path, context.temp_allocator))
+        }
+        if wep.charge_sound_path != "" {
+            wep.charge_sound = rl.LoadSound(strings.clone_to_cstring(wep.charge_sound_path, context.temp_allocator))
+        }
+    }
+}
+
+init_game_state :: proc() {
+    append(&st.entities, Entity{id = len(st.entities), type = .Player, radius = 50, max_vel = {700, 700}, health = 100, max_health = 100})
+    append(&st.entities, Entity{id = len(st.entities), type = .Crosshair, radius = 20})
+    for _ in 1 ..= 10 {
+        pos := Vec2{f32(rl.GetRandomValue(-750, 750)), f32(rl.GetRandomValue(-350, 350))}
+        enemy := Entity{id = len(st.entities), type = .Enemy, radius = 50, max_vel = {40, 40}, health = 50, max_health = 50, damage = 10, pos = pos}
+        append(&st.entities, enemy)
+    }
+
+    st.weapons[.SMG]    = WeaponInstance{ammo_in_clip = 30,  ammo_reserve = 150}
+    st.weapons[.Rifle]  = WeaponInstance{ammo_in_clip = 10,  ammo_reserve = 50}
+    st.weapons[.Tesla]  = WeaponInstance{ammo_in_clip = 20,  ammo_reserve = 80}
+    st.weapons[.Cannon] = WeaponInstance{ammo_in_clip = 3,   ammo_reserve = 6}
+}
+
+cleanup_resources :: proc() {
+    delete(st.entities)
+    delete(st.particles)
+    for &viz in VizDB {rl.UnloadTexture(viz.texture)}
+    for &wep in WeaponDB {
+        rl.UnloadSound(wep.sound)
+        rl.UnloadSound(wep.charge_sound)
+    }
+    rl.CloseAudioDevice()
+    rl.CloseWindow()
+}
+
 VizDB := [EntityType]VisualData {
     .Player    = VisualData{tex_path = "res/char3.png", tex_scale = Vec2{1, 1} / 300, bob_speed = 15.0, bob_magnitude = 5.0, squash_speed = 2.0, squash_magnitude = 0.25, squash_baseline = 0.9},
     .Enemy     = VisualData{tex_path = "res/enemy.png", tex_scale = Vec2{1, 1} / 300, bob_speed = 10.0, bob_magnitude = 4.0, squash_speed = 1.5, squash_magnitude = 0.2, squash_baseline = 0.8},
@@ -258,34 +300,8 @@ main :: proc() {
     rl.HideCursor()
     rl.InitAudioDevice()
 
-    // Initialize assets
-    for &viz in VizDB {
-        path := strings.clone_to_cstring(viz.tex_path, context.temp_allocator)
-        viz.texture = rl.LoadTexture(path)
-    }
-    for &wep in WeaponDB {
-        if wep.sound_path != "" {
-            wep.sound = rl.LoadSound(strings.clone_to_cstring(wep.sound_path, context.temp_allocator))
-        }
-        if wep.charge_sound_path != "" {
-            wep.charge_sound = rl.LoadSound(strings.clone_to_cstring(wep.charge_sound_path, context.temp_allocator))
-        }
-    }
-
-    // Initialize game state
-    append(&st.entities, Entity{id = len(st.entities), type = .Player, radius = 50, max_vel = {700, 700}, health = 100, max_health = 100})
-    append(&st.entities, Entity{id = len(st.entities), type = .Crosshair, radius = 20})
-    for _ in 1 ..= 10 {
-        pos := Vec2{f32(rl.GetRandomValue(-750, 750)), f32(rl.GetRandomValue(-350, 350))}
-        enemy := Entity{id = len(st.entities), type = .Enemy, radius = 50, max_vel = {40, 40}, health = 50, max_health = 50, damage = 10, pos = pos}
-        append(&st.entities, enemy)
-    }
-
-    // Initialize weapon ammo
-    st.weapons[.SMG]    = WeaponInstance{ammo_in_clip = 30,  ammo_reserve = 150}
-    st.weapons[.Rifle]  = WeaponInstance{ammo_in_clip = 10,  ammo_reserve = 50}
-    st.weapons[.Tesla]  = WeaponInstance{ammo_in_clip = 20,  ammo_reserve = 80}
-    st.weapons[.Cannon] = WeaponInstance{ammo_in_clip = 3,   ammo_reserve = 6}
+    init_assets()
+    init_game_state()
 
     for !rl.WindowShouldClose() {
         free_all(context.temp_allocator)
@@ -736,11 +752,5 @@ main :: proc() {
             rl.EndDrawing()
         }
     }
-    // Cleanup
-    delete(st.entities)
-    delete(st.particles)
-    for &viz in VizDB {rl.UnloadTexture(viz.texture)}
-    for &wep in WeaponDB {rl.UnloadSound(wep.sound); rl.UnloadSound(wep.charge_sound)}
-    rl.CloseAudioDevice()
-    rl.CloseWindow()
+    cleanup_resources()
 }
