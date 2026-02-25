@@ -498,6 +498,17 @@ main :: proc() {
                 draw_tex(viz.texture, pos, scale, angle, flipH)
                 rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), e.radius, rl.GREEN)
 
+                if e.type == .Player || e.type == .Enemy {     // Health bar
+                    bar_w := e.radius * 2
+                    bar_h: f32 = 6
+                    bar_x := e.pos.x - e.radius
+                    bar_y := e.pos.y - e.radius - 10
+                    frac := clamp(e.health / e.max_health, 0, 1)
+                    bar_color := rl.GREEN if frac > 0.5 else (rl.YELLOW if frac > 0.25 else rl.RED)
+                    rl.DrawRectangleRec({bar_x, bar_y, bar_w, bar_h}, rl.DARKGRAY)
+                    rl.DrawRectangleRec({bar_x, bar_y, bar_w * frac, bar_h}, bar_color)
+                }
+
                 if !st.sprite_aim_rotate {
                     if e.type != .Crosshair {
                         aim_rad := math.to_radians(e.aim_angle)
