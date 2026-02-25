@@ -527,12 +527,20 @@ update_gameplay :: proc() {
 
         // Decay visual effects (cosmetic, not state-gated)
         if inst.muzzle_flash_timer > 0 {inst.muzzle_flash_timer = max(0, inst.muzzle_flash_timer - dt)}
-        if st.camera_shake > 0.1 {st.camera_shake *= math.pow(f32(0.78), dt * 60)} else {st.camera_shake = 0}
 
         // Keep SMG audio alive only while actively firing with trigger held.
         smg_audio_active := st.current_weapon == .SMG && st.weapons[.SMG].state == .Firing && rl.IsMouseButtonDown(.LEFT)
         if !smg_audio_active {
             rl.StopSound(WeaponDB[.SMG].sound)
+        }
+    }
+
+    {     // VFX decay
+        dt := rl.GetFrameTime()
+        if st.camera_shake > 0.1 {
+            st.camera_shake *= math.pow(f32(0.78), dt * 60)
+        } else {
+            st.camera_shake = 0
         }
     }
 
