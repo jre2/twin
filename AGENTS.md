@@ -23,6 +23,7 @@
 - Types/enums use `PascalCase` (example: `GameState`, `WeaponType`).
 - Procedures/locals may use snake_case where already established.
 - Keep static data tables (`VizDB`, `WeaponDB`) centralized and update them atomically with related gameplay changes.
+- Keep game data (eg. weapon/enemy balance) baked into game source code rather than external config files. Odin compile times are fast
 
 ## Testing Guidelines
 - Prefer Odin built-in tests with `@(test)` procedures and run via `cd bin && odin test ../src`.
