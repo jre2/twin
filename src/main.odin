@@ -91,7 +91,6 @@ WeaponInstance :: struct {
     beam_angle:         f32, // cannon: locked aim angle during beam
     charge_sfx_playing: bool, // cannon: whether charge sound is playing
     pending_weapon:     WeaponType, // target weapon during Switching state
-    kickback:           f32, // visual only: decays independently
     muzzle_flash_timer: f32, // visual only: decays independently
 }
 Particle :: struct {
@@ -142,12 +141,18 @@ enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32
     inst.state_duration = duration
 }
 
+apply_player_kickback :: proc(aim_rad: f32, impulse: f32) {
+    // Convert weapon impulse into backward player velocity.
+    dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
+    st.player.vel -= dir * impulse * 8.0
+}
+
 fire_bullet :: proc(inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32) {
     spread := aim_rad + (f32(rl.GetRandomValue(-1000, 1000)) / 1000.0) * def.bullet_spread
     vel := Vec2{math.cos(spread), math.sin(spread)} * def.bullet_speed
     append(&st.particles, Particle{pos = muzzle_pos, vel = vel, radius = def.bullet_radius, damage = def.bullet_damage, color = def.bullet_color, max_age = 3.0})
     inst.ammo_in_clip -= 1
-    inst.kickback = def.kickback_impulse
+    apply_player_kickback(aim_rad, def.kickback_impulse)
     inst.muzzle_flash_timer = def.flash_duration
     st.camera_shake = max(st.camera_shake, def.shake_impulse)
     rl.PlaySound(def.sound)
@@ -432,7 +437,7 @@ main :: proc() {
                         // Fully charged → fire beam
                         inst.beam_angle = st.player.aim_angle
                         inst.ammo_in_clip -= 1
-                        inst.kickback = def.kickback_impulse
+                        apply_player_kickback(math.to_radians(inst.beam_angle), def.kickback_impulse)
                         st.camera_shake = max(st.camera_shake, def.shake_impulse)
                         rl.PlaySound(def.sound)
                         enter_state(inst, .BeamActive, def.beam_duration)
@@ -466,7 +471,6 @@ main :: proc() {
             }
 
             // Decay visual effects (cosmetic, not state-gated)
-            if inst.kickback > 0.1 {inst.kickback *= math.pow(f32(0.72), dt * 60)} else {inst.kickback = 0}
             if inst.muzzle_flash_timer > 0 {inst.muzzle_flash_timer = max(0, inst.muzzle_flash_timer - dt)}
             if st.camera_shake > 0.1 {st.camera_shake *= math.pow(f32(0.78), dt * 60)} else {st.camera_shake = 0}
         }
@@ -550,9 +554,6 @@ main :: proc() {
                     squash := math.abs(math.sin(f32(rl.GetTime()) * viz.squash_speed)) * viz.squash_magnitude + viz.squash_baseline
                     stretch := 2 - squash
                     scale *= {stretch, squash}
-                }
-                if e.type == .Player {     // Kickback: offset sprite backward along aim
-                    pos -= render_aim_dir * st.weapons[st.current_weapon].kickback
                 }
 
                 angle: f32 = 0
