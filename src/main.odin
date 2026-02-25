@@ -58,6 +58,10 @@ WeaponState :: enum {
     BeamActive,   // cannon: beam firing
     Cooldown,     // cannon: post-beam cooldown
 }
+BallisticFireMode :: enum {
+    ImmediateCooldown, // emit immediately; fire_interval gates next shot
+    WindupDelay,       // emit only after fire_interval delay
+}
 WeaponDef :: struct {
     name:              string,
     sound_path:        string,
@@ -94,6 +98,7 @@ WeaponInstance :: struct {
     beam_angle:         f32, // cannon: locked aim angle during beam
     charge_sfx_playing: bool, // cannon: whether charge sound is playing
     pending_weapon:     WeaponType, // target weapon during Switching state
+    fire_queued:        bool, // windup mode: latches a pending shot request
     muzzle_flash_timer: f32, // visual only: decays independently
 }
 Particle :: struct {
@@ -116,6 +121,7 @@ GameState :: struct {
     sprite_aim_rotate: bool,
     flip_by_aim:       bool, // true = flip sprite based on aim direction; false = flip based on movement
     auto_reload:       bool, // true = clip drop automatically chains into clip insert
+    ballistic_fire_mode: BallisticFireMode,
     current_weapon:    WeaponType,
     weapons:           [WeaponType]WeaponInstance,
     particles:         [dynamic]Particle,
@@ -184,23 +190,30 @@ process_ballistic_firing_state :: proc(inst: ^WeaponInstance, def: WeaponDef, mu
     fired := false
     switch st.current_weapon {
     case .SMG, .Tesla:
-        if rl.IsMouseButtonDown(.LEFT) && inst.ammo_in_clip > 0 {
+        wants_auto_fire := rl.IsMouseButtonDown(.LEFT)
+        can_fire := wants_auto_fire if st.ballistic_fire_mode == .ImmediateCooldown else (inst.fire_queued || wants_auto_fire)
+        if can_fire && inst.ammo_in_clip > 0 {
             fire_bullet(inst, def, muzzle_pos, aim_rad)
             inst.state_timer = 0
             inst.state_duration = def.fire_interval
+            inst.fire_queued = false
             fired = true
         }
     case .Rifle:
-        if allow_rifle_shot && rl.IsMouseButtonPressed(.LEFT) && inst.ammo_in_clip > 0 {
+        wants_rifle_fire := allow_rifle_shot && rl.IsMouseButtonPressed(.LEFT)
+        can_fire := wants_rifle_fire if st.ballistic_fire_mode == .ImmediateCooldown else inst.fire_queued
+        if can_fire && inst.ammo_in_clip > 0 {
             fire_bullet(inst, def, muzzle_pos, aim_rad)
             inst.state_timer = 0
             inst.state_duration = def.fire_interval
+            inst.fire_queued = false
             fired = true
         }
     case .Cannon:
     }
 
     if !fired {
+        inst.fire_queued = false
         enter_state(inst, .Idle, 0)
     }
 }
@@ -303,9 +316,10 @@ WeaponDB := [WeaponType]WeaponDef {
     },
 }
 st := GameState {
-    camera      = rl.Camera2D{zoom = 1.0},
-    flip_by_aim = true,
-    auto_reload = false,
+    camera              = rl.Camera2D{zoom = 1.0},
+    flip_by_aim         = true,
+    auto_reload         = false,
+    ballistic_fire_mode = .ImmediateCooldown,
 }
 
 update_gameplay :: proc() {
@@ -328,6 +342,9 @@ update_gameplay :: proc() {
         if rl.IsKeyPressed(.Y) {st.sprite_aim_rotate = !st.sprite_aim_rotate}
         if rl.IsKeyPressed(.T) {st.flip_by_aim = !st.flip_by_aim}
         if rl.IsKeyPressed(.G) {st.auto_reload = !st.auto_reload}
+        if rl.IsKeyPressed(.H) {
+            st.ballistic_fire_mode = .WindupDelay if st.ballistic_fire_mode == .ImmediateCooldown else .ImmediateCooldown
+        }
     }
 
     {     // Camera
@@ -405,10 +422,15 @@ update_gameplay :: proc() {
                 case .SMG, .Tesla, .Rifle:
                     wants_to_fire := rl.IsMouseButtonDown(.LEFT) if st.current_weapon != .Rifle else rl.IsMouseButtonPressed(.LEFT)
                     if wants_to_fire && inst.ammo_in_clip > 0 {
-                        // Enter Firing first, then process immediately to avoid first-shot frame delay.
                         enter_state(inst, .Firing, def.fire_interval)
-                        inst.state_timer = inst.state_duration // force Firing cooldown to "elapsed" so first shot can happen this frame
-                        process_ballistic_firing_state(inst, def, muzzle_pos, aim_rad, true)
+                        if st.ballistic_fire_mode == .ImmediateCooldown {
+                            // Immediate mode: force first shot this frame, then fire_interval acts as cooldown.
+                            inst.state_timer = inst.state_duration
+                            process_ballistic_firing_state(inst, def, muzzle_pos, aim_rad, true)
+                        } else {
+                            // Windup mode: first shot emits only after the timer has elapsed.
+                            inst.fire_queued = true
+                        }
                     }
                 case .Cannon:
                     if rl.IsMouseButtonDown(.LEFT) && inst.ammo_in_clip > 0 {
@@ -506,6 +528,12 @@ update_gameplay :: proc() {
         // Decay visual effects (cosmetic, not state-gated)
         if inst.muzzle_flash_timer > 0 {inst.muzzle_flash_timer = max(0, inst.muzzle_flash_timer - dt)}
         if st.camera_shake > 0.1 {st.camera_shake *= math.pow(f32(0.78), dt * 60)} else {st.camera_shake = 0}
+
+        // Keep SMG audio alive only while actively firing with trigger held.
+        smg_audio_active := st.current_weapon == .SMG && st.weapons[.SMG].state == .Firing && rl.IsMouseButtonDown(.LEFT)
+        if !smg_audio_active {
+            rl.StopSound(WeaponDB[.SMG].sound)
+        }
     }
 
     {     // Particles
@@ -693,8 +721,9 @@ render_frame :: proc() {
     // HUD
     hud_def  := WeaponDB[st.current_weapon]
     hud_inst := st.weapons[st.current_weapon]
+    fire_mode_label := "COOLDOWN" if st.ballistic_fire_mode == .ImmediateCooldown else "WINDUP"
     draw_text({10, 10}, 20, "FPS %d | HP %.0f", rl.GetFPS(), st.player.health)
-    draw_text({10, 30}, 20, "WASD: move  LMB: fire  R: reload  scroll: zoom  [1-4]: weapon  T: flip-via-aim %v  Y: rotate %v  G: auto-reload %v", st.flip_by_aim, st.sprite_aim_rotate, st.auto_reload )
+    draw_text({10, 30}, 20, "WASD: move  LMB: fire  R: reload  scroll: zoom  [1-4]: weapon  T: flip-via-aim %v  Y: rotate %v  G: auto-reload %v  H: fire mode %v", st.flip_by_aim, st.sprite_aim_rotate, st.auto_reload, fire_mode_label)
     switch hud_inst.state {
     case .Switching:   draw_text({10, 50}, 20, "SWITCHING...")
     case .ClipDrop:    draw_text({10, 50}, 20, "%v: DROPPING CLIP...", hud_def.name)

@@ -10,6 +10,8 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [x] Audit weapon FSM transitions and move ballistic bullet emission fully under `Firing` state control.
 - [x] Align cannon charge/beam/cooldown timing with current SFX durations.
 - [x] Allow player movement during beam cannon cooldown (while keeping charge/beam movement lock).
+- [x] Add runtime ballistic fire-mode toggle (`Immediate/Cooldown` vs `Windup/Delay`) with HUD indicator.
+- [x] Make SMG sound cut immediately when trigger is released (no trailing sample tail).
 
 ## Project Direction
 - [ ] Keep weapon/enemy balance data baked directly into program source.
@@ -17,9 +19,6 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 
 ## Now
 - [ ] Revisit weapon FSM structure to reduce `Idle`/`Firing` coupling while preserving no-frame-delay first shot behavior.
-- [ ] Add a debug toggle to compare two ballistic fire models:
-- [ ] Mode A: immediate shot on click, then fire interval behaves as cooldown.
-- [ ] Mode B: fire interval behaves as windup/charge delay before shot emission.
 
 ## Next
 - [ ] Add baseline enemy AI: chase player, keep spacing, and apply simple steering to avoid clumping.
