@@ -188,28 +188,7 @@ handle_cannon :: proc(inst: ^WeaponInstance, def: WeaponDef, aim_rad: f32, muzzl
                 inst.charge = 0
             }
         }
-    case .BeamActive:
-        inst.beam_timer += dt
-        st.camera_shake = max(st.camera_shake, 55)
-        beam_rad    := math.to_radians(inst.beam_angle)
-        beam_dir    := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
-        beam_origin := st.player.pos + beam_dir * (st.player.radius + 15)
-        for &e in st.entities {
-            if e.type != .Enemy {continue}
-            to_e  := e.pos - beam_origin
-            along := linalg.dot(to_e, beam_dir)
-            if along < 0 {continue}
-            if linalg.length(to_e - beam_dir * along) < def.beam_half_width + e.radius {
-                e.health -= def.beam_damage * dt
-            }
-        }
-        if inst.beam_timer >= def.beam_duration {
-            inst.state = .Cooldown
-            inst.cooldown_timer = 0
-        }
-    case .Cooldown:
-        inst.cooldown_timer += dt
-        if inst.cooldown_timer >= def.cooldown_time {inst.state = .Idle}
+    case .BeamActive, .Cooldown: // ticked unconditionally outside this proc
     }
 }
 
@@ -313,6 +292,7 @@ main :: proc() {
         enemy := Entity{id = len(st.entities), type = .Enemy, radius = 50, max_vel = {40, 40}, health = 50, max_health = 50, damage = 10, pos = pos}
         append(&st.entities, enemy)
     }
+
     // Initialize weapon ammo
     st.weapons[.SMG]    = WeaponInstance{ammo_in_clip = 30,  ammo_reserve = 150}
     st.weapons[.Rifle]  = WeaponInstance{ammo_in_clip = 10,  ammo_reserve = 50}
@@ -382,10 +362,10 @@ main :: proc() {
         {     // Weapons
             dt := rl.GetFrameTime()
 
-            if rl.IsKeyPressed(.ONE)   {switch_weapon(.SMG)}
-            if rl.IsKeyPressed(.TWO)   {switch_weapon(.Rifle)}
-            if rl.IsKeyPressed(.THREE) {switch_weapon(.Tesla)}
-            if rl.IsKeyPressed(.FOUR)  {switch_weapon(.Cannon)}
+            if      rl.IsKeyPressed(.ONE)   {switch_weapon(.SMG)}
+            else if rl.IsKeyPressed(.TWO)   {switch_weapon(.Rifle)}
+            else if rl.IsKeyPressed(.THREE) {switch_weapon(.Tesla)}
+            else if rl.IsKeyPressed(.FOUR)  {switch_weapon(.Cannon)}
 
             def  := WeaponDB[st.current_weapon]
             inst := &st.weapons[st.current_weapon]
@@ -422,6 +402,37 @@ main :: proc() {
             }
 
             if inst.fire_timer > 0 {inst.fire_timer -= dt}
+
+            // Tick cannon beam/cooldown unconditionally so switching weapons doesn't freeze the state machine
+            {
+                cannon := &st.weapons[.Cannon]
+                cdef   := WeaponDB[.Cannon]
+                switch cannon.state {
+                case .BeamActive:
+                    cannon.beam_timer += dt
+                    st.camera_shake = max(st.camera_shake, 55)
+                    beam_rad    := math.to_radians(cannon.beam_angle)
+                    beam_dir    := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
+                    beam_origin := st.player.pos + beam_dir * (st.player.radius + 15)
+                    for &e in st.entities {
+                        if e.type != .Enemy {continue}
+                        to_e  := e.pos - beam_origin
+                        along := linalg.dot(to_e, beam_dir)
+                        if along < 0 {continue}
+                        if linalg.length(to_e - beam_dir * along) < cdef.beam_half_width + e.radius {
+                            e.health -= cdef.beam_damage * dt
+                        }
+                    }
+                    if cannon.beam_timer >= cdef.beam_duration {
+                        cannon.state = .Cooldown
+                        cannon.cooldown_timer = 0
+                    }
+                case .Cooldown:
+                    cannon.cooldown_timer += dt
+                    if cannon.cooldown_timer >= cdef.cooldown_time {cannon.state = .Idle}
+                case .Idle, .Charging:
+                }
+            }
 
             // Decay per-weapon visual effects
             if inst.kickback > 0.1 {inst.kickback *= math.pow(f32(0.72), dt * 60)} else {inst.kickback = 0}
@@ -500,20 +511,21 @@ main :: proc() {
                 pos := e.pos
                 scale := viz.tex_scale * e.radius
                 flipH := (math.abs(e.aim_angle) > 90) if st.flip_by_aim else (e.vel.x < 0)
-                angle: f32 = 0
-                if st.sprite_aim_rotate {angle = e.aim_angle}
 
-                if e.type != .Crosshair { // Bobbing effect
+                if e.type != .Crosshair {     // Bobbing effect
                     pos.y += math.sin(f32(rl.GetTime()) * viz.bob_speed) * viz.bob_magnitude
                 }
-                if e.type != .Crosshair { // Squash and stretch effect
+                if e.type != .Crosshair {     // Squash and stretch effect
                     squash := math.abs(math.sin(f32(rl.GetTime()) * viz.squash_speed)) * viz.squash_magnitude + viz.squash_baseline
                     stretch := 2 - squash
                     scale *= {stretch, squash}
                 }
-                if e.type == .Player { // Kickback: offset sprite backward along aim
+                if e.type == .Player {     // Kickback: offset sprite backward along aim
                     pos -= render_aim_dir * st.weapons[st.current_weapon].kickback
                 }
+
+                angle: f32 = 0
+                if st.sprite_aim_rotate {angle = e.aim_angle}
 
                 draw_tex(viz.texture, pos, scale, angle, flipH)
                 rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), e.radius, rl.GREEN)
