@@ -9,7 +9,6 @@ import "core:strings"
 import rl "vendor:raylib"
 
 DEBUG_MEMORY :: true
-SPRITE_AIM_ROTATE :: false
 
 FrictionGroundPerTick :: 0.90625 // Doom style, per 35hz tic, applied to current speed
 FrictionGroundPerSec: f32 = math.pow(f32(FrictionGroundPerTick), 35.0)
@@ -45,13 +44,14 @@ Entity :: struct {
     damage:     f32, // contact damage per second
 }
 GameState :: struct {
-    render_size: Vec2,
-    dpi_scaling: Vec2,
-    mouse_pos:   Vec2, // screen space
-    camera:      rl.Camera2D,
-    entities:    [dynamic]Entity,
-    player:      ^Entity,
-    crosshair:   ^Entity,
+    render_size:       Vec2,
+    dpi_scaling:       Vec2,
+    mouse_pos:         Vec2, // screen space
+    camera:            rl.Camera2D,
+    entities:          [dynamic]Entity,
+    player:            ^Entity,
+    crosshair:         ^Entity,
+    sprite_aim_rotate: bool,
 }
 
 vec2 :: proc(v: Vec2i) -> Vec2 {return Vec2{f32(v.x), f32(v.y)}}
@@ -124,6 +124,7 @@ main :: proc() {
             st.render_size = vec2({rl.GetRenderWidth(), rl.GetRenderHeight()})
             st.dpi_scaling = rl.GetWindowScaleDPI()
             st.mouse_pos = rl.GetMousePosition() * st.dpi_scaling // not DPI aware so we must fix
+            if rl.IsKeyPressed(.Y) {st.sprite_aim_rotate = !st.sprite_aim_rotate}
         }
 
         {     // Camera
@@ -180,7 +181,7 @@ main :: proc() {
                 scale := viz.tex_scale * e.radius
                 flipH := e.vel.x < 0
                 angle: f32 = 0
-                when SPRITE_AIM_ROTATE {angle = e.aim_angle}
+                if st.sprite_aim_rotate {angle = e.aim_angle}
 
                 if e.type != .Crosshair { // Bobbing effect
                     pos.y += math.sin(f32(rl.GetTime()) * viz.bob_speed) * viz.bob_magnitude
@@ -194,7 +195,7 @@ main :: proc() {
                 draw_tex(viz.texture, pos, scale, angle, flipH)
                 rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), e.radius, rl.GREEN)
 
-                when !SPRITE_AIM_ROTATE {
+                if !st.sprite_aim_rotate {
                     if e.type != .Crosshair {
                         aim_rad := math.to_radians(e.aim_angle)
                         cone_len := e.radius * 1.5
@@ -211,7 +212,7 @@ main :: proc() {
 
             rl.EndMode2D()
             draw_text({10, 10}, 20, "FPS %d | HP %.0f", rl.GetFPS(), st.player.health)
-            draw_text({10, 30}, 20, "WASD: move | scroll: zoom")
+            draw_text({10, 30}, 20, "WASD: move | scroll: zoom | Y: toggle aim rotate")
             rl.EndDrawing()
         }
     }
