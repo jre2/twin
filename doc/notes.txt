@@ -1,0 +1,23 @@
+weapon state
+    when switch weapons, need to reset certain state of new/old weapon?
+    firing inside idle state emits bullet. has separate firing state that should do it
+
+generally better separation for gameplay logic and rendering code
+    camera shake decay shouldnt be in weapon update section. vfx should be separate section
+
+
+cannon timing seems off
+    charge hits max charge before sound effect finishes (barely)
+    live beam duration too short; cooldown starts while the sound is still in the awesome beam damage phase, before the weird air-vacuum cooldown phase
+
+
+not only player should have kickback from powerful weapons; enemies too
+    rather than pure visual offset, maybe kickback on firing actually moves player a bit? model per frame movement to have it look nice
+        impulse based? player can maybe try to counteract with careful movement?
+
+
+refactor all the asset loading and DB init to separate func for clarity
+
+# meta issues for claude
+add custom commands
+    /build/test command
