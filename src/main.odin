@@ -344,7 +344,7 @@ update_gameplay :: proc() {
 
     dir_input: Vec2
     {     // Movement
-        st.player.cant_volitional_move = st.weapons[st.current_weapon].state != .Idle // TODO refactor so every entity has weapons; not just the player in some global state
+        st.player.cant_volitional_move = st.weapons[st.current_weapon].state != .Idle && st.weapons[st.current_weapon].state != .Cooldown // allow movement during post-beam cooldown
         if !st.player.cant_volitional_move {
             if rl.IsKeyDown(.W) {dir_input.y -= 1}
             if rl.IsKeyDown(.S) {dir_input.y += 1}

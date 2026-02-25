@@ -9,6 +9,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [x] Refactor `main()` into explicit `update_gameplay()` and `render_frame()` systems.
 - [x] Audit weapon FSM transitions and move ballistic bullet emission fully under `Firing` state control.
 - [x] Align cannon charge/beam/cooldown timing with current SFX durations.
+- [x] Allow player movement during beam cannon cooldown (while keeping charge/beam movement lock).
 
 ## Project Direction
 - [ ] Keep weapon/enemy balance data baked directly into program source.
