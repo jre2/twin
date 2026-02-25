@@ -1,21 +1,21 @@
 # Repository Guidelines
 
 ## Project Overview
-- **Twin** is a 2D top-down game built with Odin and Raylib.
+- **Twin** is a 2D top-down game built with Odin and Raylib, running on macOS (Darwin).
 - The project intentionally uses a single-package layout so gameplay iteration stays fast (`src/main.odin`).
 
 ## Project Structure & Module Organization
 - `src/main.odin`: Main game package and entry point (gameplay, weapons, update loop, rendering).
 - `res/`: Runtime assets (textures and audio). Add assets here and wire paths in `VizDB`/`WeaponDB`.
-- `bin/`: Build output directory (`twin.exe`). Run Odin build/test commands from this directory.
+- `bin/`: Build output directory (`twin`). Run Odin build/test commands from this directory.
 - `tools/`: Helper scripts for local run/watch workflows.
 - `doc/`: Notes and platform resource files (icons, `.rc`, etc.).
 - `doc/TODO.md`: Prioritized backlog for upcoming gameplay and tech tasks.
 
 ## Build, Test, and Development Commands
 Run `odin` commands from `bin/`:
-- `cd bin && odin run ../src -out:twin.exe -debug`: Run a debug build.
-- `cd bin && odin build ../src -out:twin.exe -debug`: Build debug binary only.
+- `cd bin && odin run ../src -out:twin -debug`: Run a debug build.
+- `cd bin && odin build ../src -out:twin -debug`: Build debug binary only.
 - `cd bin && odin check ../src`: Type-check without producing a binary.
 - `cd bin && odin test ../src`: Run Odin tests.
 - `odinfmt -w src/main.odin` (run from repo root): Format source.
@@ -25,7 +25,8 @@ Run `odin` commands from `bin/`:
 - `Entity`/`EntityType` are core world actor types (`Player`, `Enemy`, `Crosshair`) and hold gameplay-facing state.
 - `VisualData`/`VizDB` contain static render and animation tuning per entity type.
 - `WeaponDef` stores static tuning; `WeaponInstance` stores per-weapon runtime FSM state.
-- `GameState` (`st`) is the shared mutable runtime state for gameplay, rendering, audio triggers, and debug metrics.
+- `GameState` (`st`) is the shared mutable runtime state for gameplay, rendering, audio triggers, and debug metrics. `st` is a **file-scope global**; procedures read and write it directly rather than taking it as a parameter.
+- `VizDB` and `WeaponDB` are mutable global lookup tables indexed by `EntityType` and `WeaponType` respectively (mutable because `dynamic-literals` is enabled and asset handles are filled at init).
 - The frame pipeline follows a standard input → update → render loop.
 - Keep input collection and gameplay state mutation in update; keep rendering as a separate pass that consumes state.
 - Movement/friction uses Doom-style per-tick friction converted and scaled for frame-rate-independent behavior.
@@ -42,6 +43,14 @@ Run `odin` commands from `bin/`:
 - Keep game data (for example, weapon/enemy balance) baked into source code, not external config files.
 - `#+feature dynamic-literals` is enabled in `src/main.odin`.
 
+### Odin-Specific Patterns
+- Use `for &e in xs` when mutating elements in-place; `for e in xs` gives a copy.
+- Prefer `for i in 0..<len(xs)` for index loops. Use C-style `for i := 0; i < len(xs);` only when the loop body changes the collection length (e.g., `unordered_remove` with conditional advance).
+- Ternary: `x if cond else y` (not `cond ? x : y`).
+- Unwrap `Maybe(T)` with `if val, ok := m.?; ok { ... }`.
+- String to cstring: `strings.clone_to_cstring(s, context.temp_allocator)`.
+- Raylib vector types are not used; the codebase uses its own `Vec2` (`[2]f32`) and `Vec2i` (`[2]i32`).
+
 ## Testing Guidelines
 - Prefer Odin built-in tests with `@(test)` procedures; run with `cd bin && odin test ../src`.
 - Focus tests on deterministic gameplay logic (state transitions, damage math, reload/switch timing).
@@ -57,7 +66,6 @@ Run `odin` commands from `bin/`:
 ## Workflow Notes
 - For gameplay tasks, default to one task at a time and pause for playtest feedback before starting the next.
 - Update `doc/TODO.md` after each task (status/priority changes and Recently Completed entries when done).
-- Keep `AGENTS.md` and `CLAUDE.md` aligned; when one changes, mirror the same repo-level guidance in the other.
 
 ## Tooling
 - Formatter: `odinfmt` (configured in `odinfmt.json`).
