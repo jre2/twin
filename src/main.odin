@@ -146,6 +146,7 @@ WeaponInstance :: struct {
     beam_angle:                 f32, // cannon: locked aim angle during beam
     charge_sfx_playing:         bool, // cannon: whether charge sound is playing
     pending_weapon:             WeaponType, // target weapon during Switching state
+    fire_on_firing_enter:       bool, // immediate mode: fire once on first .Firing frame
     fire_queued:                bool, // windup mode: latches a pending shot request
     reload_window_start:        f32, // clip insert minigame timing window [0..1]
     reload_window_end:          f32, // clip insert minigame timing window [0..1]
@@ -539,14 +540,21 @@ fire_bullet :: proc(entity: ^Entity, inst: ^WeaponInstance, def: WeaponDef, muzz
 }
 
 process_ballistic_firing_state :: proc(entity: ^Entity, inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32, input: WeaponInput) {
-    if inst.state != .Firing || inst.state_timer < inst.state_duration {
+    if inst.state != .Firing {
+        return
+    }
+
+    fire_on_entry := inst.fire_on_firing_enter
+    if fire_on_entry {
+        inst.fire_on_firing_enter = false
+    } else if inst.state_timer < inst.state_duration {
         return
     }
 
     fired := false
     switch entity.active_weapon {
     case .SMG, .Tesla:
-        can_fire := input.fire_held if entity.ballistic_fire_mode == .ImmediateCooldown else (inst.fire_queued || input.fire_held)
+        can_fire := input.fire_held || fire_on_entry if entity.ballistic_fire_mode == .ImmediateCooldown else (inst.fire_queued || input.fire_held)
         if can_fire && inst.ammo_in_clip > 0 {
             fire_bullet(entity, inst, def, muzzle_pos, aim_rad)
             inst.state_timer = 0
@@ -555,7 +563,7 @@ process_ballistic_firing_state :: proc(entity: ^Entity, inst: ^WeaponInstance, d
             fired = true
         }
     case .Rifle:
-        wants_rifle_fire := input.fire_pressed
+        wants_rifle_fire := input.fire_pressed || fire_on_entry
         can_fire := wants_rifle_fire if entity.ballistic_fire_mode == .ImmediateCooldown else inst.fire_queued
         if can_fire && inst.ammo_in_clip > 0 {
             fire_bullet(entity, inst, def, muzzle_pos, aim_rad)
@@ -612,12 +620,10 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
                     wants_to_fire := input.fire_held if entity.active_weapon != .Rifle else input.fire_pressed
                     if wants_to_fire && inst.ammo_in_clip > 0 {
                         enter_state(inst, .Firing, def.fire_interval)
-                        if entity.ballistic_fire_mode == .ImmediateCooldown {
-                            inst.state_timer = inst.state_duration
-                            process_ballistic_firing_state(entity, inst, def, muzzle_pos, aim_rad, WeaponInput{fire_held = true, fire_pressed = true})
-                        } else {
-                            inst.fire_queued = true
-                        }
+                        inst.fire_on_firing_enter = entity.ballistic_fire_mode == .ImmediateCooldown
+                        inst.fire_queued = entity.ballistic_fire_mode == .WindupDelay
+                        // Fire immediately on state entry without mutating timer semantics.
+                        process_ballistic_firing_state(entity, inst, def, muzzle_pos, aim_rad, input)
                     }
                 case .Cannon: if input.fire_held && inst.ammo_in_clip > 0 {
                             enter_state(inst, .Charging, def.charge_time)
