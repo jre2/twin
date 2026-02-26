@@ -3,8 +3,6 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Rework movement model to separate volitional movement speed from non-volitional impulses (kickback/explosions/dash), and remove ambiguous `max_vel` behavior.
-- [ ] Fix rusher dash so burst speed is preserved during `Dashing` (not clamped to normal movement speed).
 - [ ] Resolve weapon ownership model (`available_weapons` vs implied-by-ammo/loadout) and implement one consistent rule.
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 - [ ] Review enemy sounds and whether toggles like `auto_reload`/fire mode should live per-entity or in global game state.
@@ -31,6 +29,8 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Reworked movement into separate volitional and impulse velocity channels, so kickback/explosions/dashes are no longer constrained by normal movement speed caps.
+- [x] Improved rusher dash behavior (smarter charge timing/targeting, stronger dash travel, and clearer dash-state VFX/debug feedback).
 - [x] Implemented baseline enemy AI with steering/separation, shared weapon FSM usage, and data-driven EnemyDB spawning.
 - [x] Added enemy movement variety: Chaser pursuit, Rusher charge/dash FSM, and Strafer orbit/range behavior with weapon switching.
 - [x] Prevented enemy-vs-enemy contact damage while keeping enemy projectile friendly fire vs player.

@@ -43,10 +43,12 @@ Entity :: struct {
     id:                   int,
     type:                 EntityType,
     pos:                  Vec2,
-    vel:                  Vec2,
+    move_vel:             Vec2, // volitional movement only (input/AI steering)
+    impulse_vel:          Vec2, // non-volitional movement (kickback, explosions, dashes)
     radius:               f32,
     aim_angle:            f32, // degrees
-    max_vel:              Vec2,
+    move_speed:           f32, // max speed for move_vel only
+    move_accel:           f32, // responsiveness multiplier for move_vel acceleration
     health:               f32,
     max_health:           f32,
     damage:               f32, // contact damage per second
@@ -101,8 +103,8 @@ WeaponInput :: struct {
     switch_to:    Maybe(WeaponType),
 }
 EnemyDef :: struct {
-    max_vel:          f32,
-    accel_factor:     f32,
+    move_speed:       f32,
+    move_accel:       f32,
     health:           f32,
     contact_damage:   f32,
     radius:           f32,
@@ -254,7 +256,7 @@ check_reload_window :: proc(cursor: f32, window_start: f32, window_end: f32) -> 
 
 apply_kickback :: proc(entity: ^Entity, aim_rad: f32, impulse: f32) {
     dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
-    entity.vel -= dir * impulse * 8.0
+    entity.impulse_vel -= dir * impulse * 8.0
 }
 
 spawn_hit_sparks :: proc(origin: Vec2, color: rl.Color, count: int = 5) {
@@ -514,7 +516,8 @@ init_game_state :: proc() {
         id                  = len(st.entities),
         type                = .Player,
         radius              = 50,
-        max_vel             = {700, 700},
+        move_speed          = 700,
+        move_accel          = 1.0,
         health              = 100,
         max_health          = 100,
         ballistic_fire_mode = .ImmediateCooldown,
@@ -553,7 +556,8 @@ init_game_state :: proc() {
                 enemy_type          = batch.enemy_type,
                 ai_state            = .Idle,
                 radius              = def.radius,
-                max_vel             = {def.max_vel, def.max_vel},
+                move_speed          = def.move_speed,
+                move_accel          = def.move_accel,
                 health              = def.health,
                 max_health          = def.health,
                 damage              = def.contact_damage,
@@ -678,10 +682,10 @@ WeaponDB := [WeaponType]WeaponDef {
     },
 }
 EnemyDB := [EnemyType]EnemyDef {
-    .Chaser = EnemyDef{max_vel = 120, accel_factor = 1.2, health = 50, contact_damage = 10, radius = 50, tint = rl.RED, separation_str = 120, loadout = {.SMG}},
+    .Chaser = EnemyDef{move_speed = 120, move_accel = 1.2, health = 50, contact_damage = 10, radius = 50, tint = rl.RED, separation_str = 120, loadout = {.SMG}},
     .Rusher = EnemyDef {
-        max_vel = 80,
-        accel_factor = 1.1,
+        move_speed = 80,
+        move_accel = 1.1,
         health = 30,
         contact_damage = 15,
         radius = 40,
@@ -689,13 +693,13 @@ EnemyDB := [EnemyType]EnemyDef {
         separation_str = 100,
         loadout = {.SMG},
         charge_telegraph = 0.6,
-        dash_speed = 420,
-        dash_duration = 0.25,
-        dash_cooldown = 1.2,
+        dash_speed = 560,
+        dash_duration = 0.30,
+        dash_cooldown = 1.1,
     },
     .Strafer = EnemyDef {
-        max_vel = 95,
-        accel_factor = 1.2,
+        move_speed = 95,
+        move_accel = 1.2,
         health = 35,
         contact_damage = 3,
         radius = 45,
@@ -760,10 +764,16 @@ update_gameplay :: proc() {
             if rl.IsKeyDown(.D) {dir_input.x += 1}
         }
 
-        accel_per_sec := st.player.max_vel * (1 - FrictionGroundPerTick) * 35.0
-        st.player.vel += dir_input * accel_per_sec * dt
-        st.player.vel = st.player.vel * math.pow(FrictionGroundPerSec, dt)
-        st.player.pos += st.player.vel * dt
+        move_accel_per_sec := st.player.move_speed * (1 - FrictionGroundPerTick) * 35.0 * st.player.move_accel
+        st.player.move_vel += dir_input * move_accel_per_sec * dt
+        st.player.move_vel = st.player.move_vel * math.pow(FrictionGroundPerSec, dt)
+        move_speed_sq := linalg.length2(st.player.move_vel)
+        move_cap_sq := st.player.move_speed * st.player.move_speed
+        if move_speed_sq > move_cap_sq {
+            st.player.move_vel = st.player.move_vel / math.sqrt(move_speed_sq) * st.player.move_speed
+        }
+        st.player.impulse_vel = st.player.impulse_vel * math.pow(FrictionGroundPerSec, dt)
+        st.player.pos += (st.player.move_vel + st.player.impulse_vel) * dt
     }
 
     {     // Aiming
@@ -826,23 +836,46 @@ update_gameplay :: proc() {
                 steering = separation_term
                 switch e.ai_state {
                 case .Idle:
-                    steering += dir_to_player * 0.5
-                    in_range := dist_to_player < 400
+                    e.ai_timer += dt
+                    if dist_to_player > 430 {
+                        steering += dir_to_player * 0.9
+                    } else if dist_to_player < 170 {
+                        steering += -dir_to_player * 0.55
+                    } else {
+                        steering += dir_to_player * 0.25
+                    }
+                    in_range := dist_to_player < 380
                     enemy_input.fire_held = in_range
                     enemy_input.fire_pressed = in_range
-                    if dist_to_player < 300 {
+                    player_world_vel := st.player.move_vel + st.player.impulse_vel
+                    closing_dot: f32
+                    player_speed_sq := linalg.length2(player_world_vel)
+                    if player_speed_sq > 1 {
+                        player_dir := player_world_vel / math.sqrt(player_speed_sq)
+                        // Positive means player is moving toward the rusher; avoid wasting dashes on hard closes.
+                        closing_dot = linalg.dot(player_dir, -dir_to_player)
+                    }
+                    can_charge_dist := dist_to_player > 210 && dist_to_player < 520
+                    if can_charge_dist && e.ai_timer >= 0.28 && closing_dot < 0.70 {
                         e.ai_state = .Charging
                         e.ai_timer = 0
-                        e.vel = {}
+                        e.move_vel = {}
                     }
                 case .Charging:
                     ai_freeze = true
-                    e.vel = {}
+                    e.move_vel = {}
                     e.ai_timer += dt
                     if e.ai_timer >= def.charge_telegraph {
                         e.ai_state = .Dashing
                         e.ai_timer = 0
-                        e.vel = dir_to_player * def.dash_speed
+                        lead_target := st.player.pos + (st.player.move_vel + st.player.impulse_vel) * 0.22
+                        dash_vec := lead_target - e.pos
+                        dash_dir := dir_to_player
+                        dash_len_sq := linalg.length2(dash_vec)
+                        if dash_len_sq > 0.0001 {
+                            dash_dir = dash_vec / math.sqrt(dash_len_sq)
+                        }
+                        e.impulse_vel = dash_dir * def.dash_speed
                     }
                 case .Dashing:
                     use_air_friction = true
@@ -852,6 +885,7 @@ update_gameplay :: proc() {
                         e.ai_timer = 0
                     }
                 case .Cooldown:
+                    use_air_friction = true
                     e.ai_timer += dt
                     if e.ai_timer >= def.dash_cooldown {
                         e.ai_state = .Idle
@@ -870,7 +904,7 @@ update_gameplay :: proc() {
                 }
                 orbit_sign: f32 = 1 if e.id % 2 == 0 else -1
                 tangential := Vec2{-dir_to_player.y, dir_to_player.x} * orbit_sign
-                steering = radial + tangential * (def.strafe_speed / max(f32(1), def.max_vel)) + separation_term
+                steering = radial + tangential * (def.strafe_speed / max(f32(1), def.move_speed)) + separation_term
                 in_range := dist_to_player < preferred + 150
                 enemy_input.fire_held = in_range
                 enemy_input.fire_pressed = in_range
@@ -894,21 +928,27 @@ update_gameplay :: proc() {
             e.cant_volitional_move = e.cant_volitional_move || ai_freeze
 
             if !e.cant_volitional_move && e.ai_state != .Dashing {
-                accel_per_sec := e.max_vel * (1 - FrictionGroundPerTick) * 35.0 * def.accel_factor
-                e.vel += steering * accel_per_sec * dt
+                move_accel_per_sec := e.move_speed * (1 - FrictionGroundPerTick) * 35.0 * e.move_accel
+                e.move_vel += steering * move_accel_per_sec * dt
             }
 
+            e.move_vel = e.move_vel * math.pow(FrictionGroundPerSec, dt)
+            move_speed_sq := linalg.length2(e.move_vel)
+            move_cap_sq := e.move_speed * e.move_speed
+            if move_speed_sq > move_cap_sq {
+                e.move_vel = e.move_vel / math.sqrt(move_speed_sq) * e.move_speed
+            }
             friction_per_sec := FrictionGroundPerSec
             if use_air_friction {
                 friction_per_sec = FrictionAirPerSec
             }
-            e.vel = e.vel * math.pow(friction_per_sec, dt)
-            max_speed_sq := def.max_vel * def.max_vel
-            speed_sq := linalg.length2(e.vel)
-            if speed_sq > max_speed_sq {
-                e.vel = e.vel / math.sqrt(speed_sq) * def.max_vel
+            if e.ai_state == .Dashing {
+                // Keep burst movement coherent while dash is active.
+                e.impulse_vel = e.impulse_vel * math.pow(FrictionAirPerSec, dt * 0.20)
+            } else {
+                e.impulse_vel = e.impulse_vel * math.pow(friction_per_sec, dt)
             }
-            e.pos += e.vel * dt
+            e.pos += (e.move_vel + e.impulse_vel) * dt
         }
     }
 
@@ -1033,7 +1073,8 @@ render_frame :: proc() {
             enemy_def = EnemyDB[e.enemy_type]
             scale = viz.tex_scale * enemy_def.radius
         }
-        flipH := (math.abs(e.aim_angle) > 90) if st.flip_by_aim else (e.vel.x < 0)
+        world_vel := e.move_vel + e.impulse_vel
+        flipH := (math.abs(e.aim_angle) > 90) if st.flip_by_aim else (world_vel.x < 0)
 
         if e.type != .Crosshair {     // Bobbing effect
             pos.y += math.sin(f32(rl.GetTime()) * viz.bob_speed) * viz.bob_magnitude
@@ -1050,6 +1091,9 @@ render_frame :: proc() {
         tint := rl.WHITE
         if e.type == .Enemy {
             tint = enemy_def.tint
+            if e.enemy_type == .Rusher && e.ai_state == .Dashing {
+                tint = rl.Color{255, 222, 128, 255}
+            }
         }
         if e.hit_flash > 0.01 {
             tint = rl.Color{255, 165, 165, 255}
@@ -1057,12 +1101,34 @@ render_frame :: proc() {
 
         draw_tex(viz.texture, pos, scale, angle, flipH, tint)
         rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), e.radius, rl.GREEN)
-        if e.type == .Enemy && e.enemy_type == .Rusher && e.ai_state == .Charging {
-            telegraph_def := EnemyDB[.Rusher]
-            telegraph_frac := clamp(e.ai_timer / max(f32(0.001), telegraph_def.charge_telegraph), 0, 1)
-            pulse := f32(1.0) + 0.18 * math.sin(f32(rl.GetTime()) * 18)
-            telegraph_r := e.radius * (1.2 + 0.45 * telegraph_frac) * pulse
-            rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), telegraph_r, rl.Fade(rl.RED, 0.85))
+        if e.type == .Enemy && e.enemy_type == .Rusher {
+            switch e.ai_state {
+            case .Charging:
+                telegraph_def := EnemyDB[.Rusher]
+                telegraph_frac := clamp(e.ai_timer / max(f32(0.001), telegraph_def.charge_telegraph), 0, 1)
+                pulse := f32(1.0) + 0.18 * math.sin(f32(rl.GetTime()) * 18)
+                telegraph_r := e.radius * (1.2 + 0.45 * telegraph_frac) * pulse
+                rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), telegraph_r, rl.Fade(rl.RED, 0.85))
+            case .Dashing:
+                dash_vel := e.move_vel + e.impulse_vel
+                dash_speed_sq := linalg.length2(dash_vel)
+                if dash_speed_sq > 1 {
+                    dash_speed := math.sqrt(dash_speed_sq)
+                    dash_dir := dash_vel / dash_speed
+                    trail_len := e.radius * 2.4 + min(f32(320), dash_speed * 0.30)
+                    tail := e.pos - dash_dir * trail_len
+                    rl.DrawLineEx(e.pos, tail, 10, rl.Fade(rl.ORANGE, 0.32))
+                    rl.DrawLineEx(e.pos, tail, 5, rl.Fade(rl.YELLOW, 0.90))
+                    for gi in 1 ..= 3 {
+                        t := f32(gi) / 4.0
+                        ghost := e.pos - dash_dir * trail_len * t
+                        ghost_r := e.radius * (1.0 - 0.18 * t)
+                        rl.DrawCircleV(ghost, ghost_r, rl.Fade(rl.ORANGE, 0.34 * (1 - t)))
+                    }
+                    rl.DrawCircleLines(i32(e.pos.x), i32(e.pos.y), e.radius * 1.25, rl.Fade(rl.YELLOW, 0.95))
+                }
+            case .Idle, .Cooldown:
+            }
         }
         if e.hit_flash > 0 {
             flash_alpha := clamp(e.hit_flash / 0.18, 0, 1)
@@ -1224,12 +1290,26 @@ render_frame :: proc() {
 
     if st.show_debug_overlay {
         enemy_count := 0
+        rusher_idle := 0
+        rusher_charging := 0
+        rusher_dashing := 0
+        rusher_cooldown := 0
         for e in st.entities {
-            if e.type == .Enemy {enemy_count += 1}
+            if e.type != .Enemy {continue}
+            enemy_count += 1
+            if e.enemy_type == .Rusher {
+                switch e.ai_state {
+                case .Idle: rusher_idle += 1
+                case .Charging: rusher_charging += 1
+                case .Dashing: rusher_dashing += 1
+                case .Cooldown: rusher_cooldown += 1
+                }
+            }
         }
         draw_text({10, 110}, 18, "[U] DEBUG OVERLAY")
         draw_text({10, 130}, 18, "ENTITIES %d | ENEMIES %d | PARTICLES %d", len(st.entities), enemy_count, len(st.particles))
         draw_text({10, 150}, 18, "FRAME %.2fms | UPDATE %.2fms | RENDER %.2fms", st.debug_frame_ms, st.debug_update_ms, st.debug_render_ms)
+        draw_text({10, 170}, 18, "RUSHER FSM I:%d C:%d D:%d CD:%d", rusher_idle, rusher_charging, rusher_dashing, rusher_cooldown)
     }
 
     rl.EndDrawing()
