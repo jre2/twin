@@ -55,11 +55,11 @@ Entity :: struct {
     hit_flash:            f32, // seconds remaining for damage feedback
     cant_volitional_move: bool, // whether entity can move of their own volition; momentum and knockback are not affected
     // Weapons (shared between player and enemies)
-    current_weapon:       WeaponType,
+    active_weapon:        WeaponType,
     weapons:              [WeaponType]WeaponInstance,
     ballistic_fire_mode:  BallisticFireMode,
     auto_reload:          bool,
-    available_weapons:    bit_set[WeaponType],
+    owned_weapons:        bit_set[WeaponType],
     // Enemy AI
     enemy_type:           EnemyType,
     ai_state:             EnemyAIState,
@@ -110,7 +110,7 @@ EnemyDef :: struct {
     radius:           f32,
     tint:             rl.Color,
     separation_str:   f32,
-    loadout:          []WeaponType,
+    starting_weapons: []WeaponType,
     charge_telegraph: f32,
     dash_speed:       f32,
     dash_duration:    f32,
@@ -297,7 +297,7 @@ process_ballistic_firing_state :: proc(entity: ^Entity, inst: ^WeaponInstance, d
     }
 
     fired := false
-    switch entity.current_weapon {
+    switch entity.active_weapon {
     case .SMG, .Tesla:
         can_fire := input.fire_held if entity.ballistic_fire_mode == .ImmediateCooldown else (inst.fire_queued || input.fire_held)
         if can_fire && inst.ammo_in_clip > 0 {
@@ -346,8 +346,8 @@ draw_cannon_beam :: proc(beam_angle_deg: f32, beam_timer: f32) {
 }
 
 update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
-    def := WeaponDB[entity.current_weapon]
-    inst := &entity.weapons[entity.current_weapon]
+    def := WeaponDB[entity.active_weapon]
+    inst := &entity.weapons[entity.active_weapon]
 
     aim_rad := math.to_radians(entity.aim_angle)
     aim_dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
@@ -362,7 +362,7 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
 
     switch inst.state {
     case .Idle: // Weapon switch
-            if w, ok := input.switch_to.?; ok && w != entity.current_weapon && w in entity.available_weapons {
+            if w, ok := input.switch_to.?; ok && w != entity.active_weapon && w in entity.owned_weapons {
                 inst.pending_weapon = w
                 enter_state(inst, .Switching, def.switch_time)
             } else if input.reload {
@@ -372,9 +372,9 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
                 case .None:
                 }
             } else {
-                switch entity.current_weapon {
+                switch entity.active_weapon {
                 case .SMG, .Tesla, .Rifle:
-                    wants_to_fire := input.fire_held if entity.current_weapon != .Rifle else input.fire_pressed
+                    wants_to_fire := input.fire_held if entity.active_weapon != .Rifle else input.fire_pressed
                     if wants_to_fire && inst.ammo_in_clip > 0 {
                         enter_state(inst, .Firing, def.fire_interval)
                         if entity.ballistic_fire_mode == .ImmediateCooldown {
@@ -393,7 +393,7 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
             }
 
     case .Switching: if inst.state_timer >= inst.state_duration {
-                entity.current_weapon = inst.pending_weapon
+                entity.active_weapon = inst.pending_weapon
                 enter_state(&entity.weapons[inst.pending_weapon], .Idle, 0)
             }
 
@@ -521,7 +521,7 @@ init_game_state :: proc() {
         health              = 100,
         max_health          = 100,
         ballistic_fire_mode = .ImmediateCooldown,
-        available_weapons   = {.SMG, .Rifle, .Tesla, .Cannon},
+        owned_weapons       = {.SMG, .Rifle, .Tesla, .Cannon},
     }
     player.weapons[.SMG] = WeaponInstance {
         ammo_in_clip = 30,
@@ -565,18 +565,18 @@ init_game_state :: proc() {
                 ballistic_fire_mode = .ImmediateCooldown,
             }
             switch batch.enemy_type {
-            case .Chaser, .Rusher: enemy.available_weapons = {.SMG}
-            case .Strafer: enemy.available_weapons = {.Rifle, .Tesla}
+            case .Chaser, .Rusher: enemy.owned_weapons = {.SMG}
+            case .Strafer: enemy.owned_weapons = {.Rifle, .Tesla}
             }
-            for w in def.loadout {
+            for w in def.starting_weapons {
                 wdef := WeaponDB[w]
                 enemy.weapons[w] = WeaponInstance {
                     ammo_in_clip = wdef.clip_size,
                     ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
                 }
             }
-            if len(def.loadout) > 0 {
-                enemy.current_weapon = def.loadout[0]
+            if len(def.starting_weapons) > 0 {
+                enemy.active_weapon = def.starting_weapons[0]
             }
             append(&st.entities, enemy)
         }
@@ -682,7 +682,7 @@ WeaponDB := [WeaponType]WeaponDef {
     },
 }
 EnemyDB := [EnemyType]EnemyDef {
-    .Chaser = EnemyDef{move_speed = 120, move_accel = 1.2, health = 50, contact_damage = 10, radius = 50, tint = rl.RED, separation_str = 120, loadout = {.SMG}},
+    .Chaser = EnemyDef{move_speed = 120, move_accel = 1.2, health = 50, contact_damage = 10, radius = 50, tint = rl.RED, separation_str = 120, starting_weapons = {.SMG}},
     .Rusher = EnemyDef {
         move_speed = 80,
         move_accel = 1.1,
@@ -691,7 +691,7 @@ EnemyDB := [EnemyType]EnemyDef {
         radius = 50,
         tint = rl.ORANGE,
         separation_str = 100,
-        loadout = {.SMG},
+        starting_weapons = {.SMG},
         charge_telegraph = 0.6,
         dash_speed = 560,
         dash_duration = 0.30,
@@ -705,7 +705,7 @@ EnemyDB := [EnemyType]EnemyDef {
         radius = 50,
         tint = rl.PURPLE,
         separation_str = 110,
-        loadout = {.Rifle, .Tesla},
+        starting_weapons = {.Rifle, .Tesla},
         preferred_dist = 350,
         strafe_speed = 100,
     },
@@ -755,7 +755,7 @@ update_gameplay :: proc() {
 
     dir_input: Vec2
     {     // Movement
-        player_inst := st.player.weapons[st.player.current_weapon]
+        player_inst := st.player.weapons[st.player.active_weapon]
         st.player.cant_volitional_move = player_inst.state != .Idle && player_inst.state != .Cooldown
         if !st.player.cant_volitional_move {
             if rl.IsKeyDown(.W) {dir_input.y -= 1}
@@ -909,11 +909,11 @@ update_gameplay :: proc() {
                 enemy_input.fire_held = in_range
                 enemy_input.fire_pressed = in_range
 
-                cur_inst := e.weapons[e.current_weapon]
+                cur_inst := e.weapons[e.active_weapon]
                 if cur_inst.ammo_in_clip <= 0 {
-                    if e.current_weapon == .Rifle && .Tesla in e.available_weapons {
+                    if e.active_weapon == .Rifle && .Tesla in e.owned_weapons {
                         enemy_input.switch_to = .Tesla
-                    } else if e.current_weapon == .Tesla && .Rifle in e.available_weapons {
+                    } else if e.active_weapon == .Tesla && .Rifle in e.owned_weapons {
                         enemy_input.switch_to = .Rifle
                     }
                 }
@@ -964,7 +964,7 @@ update_gameplay :: proc() {
         update_entity_weapons(st.player, player_input, dt)
 
         // Keep SMG audio alive only while actively firing with trigger held (player-only).
-        smg_audio_active := st.player.current_weapon == .SMG && st.player.weapons[.SMG].state == .Firing && rl.IsMouseButtonDown(.LEFT)
+        smg_audio_active := st.player.active_weapon == .SMG && st.player.weapons[.SMG].state == .Firing && rl.IsMouseButtonDown(.LEFT)
         if !smg_audio_active {
             rl.StopSound(WeaponDB[.SMG].sound)
         }
@@ -1175,8 +1175,8 @@ render_frame :: proc() {
     }
 
     // Muzzle flash (standard) or Tesla arc
-    cur_inst := st.player.weapons[st.player.current_weapon]
-    cur_def := WeaponDB[st.player.current_weapon]
+    cur_inst := st.player.weapons[st.player.active_weapon]
+    cur_def := WeaponDB[st.player.active_weapon]
     if cur_inst.muzzle_flash_timer > 0 && cur_def.flash_duration > 0 {
         t := cur_inst.muzzle_flash_timer / cur_def.flash_duration
         perp := Vec2{-math.sin(render_aim_rad), math.cos(render_aim_rad)}
@@ -1213,8 +1213,8 @@ render_frame :: proc() {
     }
 
     // HUD
-    hud_def := WeaponDB[st.player.current_weapon]
-    hud_inst := st.player.weapons[st.player.current_weapon]
+    hud_def := WeaponDB[st.player.active_weapon]
+    hud_inst := st.player.weapons[st.player.active_weapon]
     fire_mode_label := "COOLDOWN" if st.player.ballistic_fire_mode == .ImmediateCooldown else "WINDUP"
     draw_text({10, 10}, 20, "FPS %d | HP %.0f", rl.GetFPS(), st.player.health)
     draw_text(

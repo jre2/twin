@@ -3,11 +3,11 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Resolve weapon ownership source-of-truth (`loadout` vs `available_weapons`) and remove redundant ownership checks from weapon switch/fire logic.
+- [ ] Resolve weapon ownership source-of-truth (`starting_weapons` vs `owned_weapons`) and remove redundant ownership checks from weapon switch/fire logic.
 - [ ] Define and enforce one ownership rule for empty weapons (owned-but-empty vs unavailable), including Strafer rifle/tesla fallback behavior.
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 - [ ] Review enemy sounds and whether toggles like `auto_reload`/fire mode should live per-entity or in global game state.
-- [ ] Tune new enemy archetype balance (Chaser/Rusher/Strafer movement constants, fire ranges, and loadout pacing) after playtesting.
+- [ ] Tune new enemy archetype balance (Chaser/Rusher/Strafer movement constants, fire ranges, and starting weapon mix/pacing) after playtesting.
 
 ## Next
 - [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
