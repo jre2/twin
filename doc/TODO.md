@@ -8,6 +8,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 - [ ] Review enemy sounds and whether toggles like `auto_reload`/fire mode should live per-entity or in global game state.
 - [ ] Tune new enemy archetype balance (Chaser/Rusher/Strafer movement constants, fire ranges, and starting weapon mix/pacing) after playtesting.
+- [ ] Move enemy AI behavior thresholds currently hardcoded in `update_gameplay` (dash range gates, strafe range bands, firing ranges) into `EntityDef`/DB data for centralized tuning.
 
 ## Next
 - [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
@@ -30,6 +31,10 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Reordered runtime instance types so `WeaponInput` sits with per-entity/per-frame runtime types and `GameState` remains the final aggregate singleton.
+- [x] Refined internal declaration order so related enums/types are adjacent (entity + enemy enums together, weapon state + reload action together) and structs are split by template-vs-runtime role.
+- [x] Tightened internal section ordering in `src/main.odin` (dependency-first within types/data/globals and lifecycle call-order alignment).
+- [x] Reorganized `src/main.odin` by section: constants -> types -> DB data -> globals -> lifecycle/setup -> combat/update/render systems -> main -> tests.
 - [x] Switched localized helper procs to local constants (`:: proc`) instead of mutable proc vars (`:= proc`) for clearer intent.
 - [x] Scoped several single-use helpers into their callers (`spawn_entity`, `random_enemy_spawn_pos`, `draw_tex`, `draw_cannon_beam`, `spawn_perfect_reload_fanfare`) and removed dead/redundant globals.
 - [x] Removed redundant explicit `ai_state = .Idle` spawn assignment; entity zero-init already defaults enemy AI state to `Idle`.

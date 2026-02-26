@@ -8,6 +8,8 @@ import "core:mem"
 import "core:strings"
 import rl "vendor:raylib"
 
+// ── Compile-Time Constants ─────────────────────────────────────────────────────
+
 DEBUG_MEMORY :: true
 
 FrictionGroundPerTick :: 0.90625 // Doom style, per 35hz tic, applied to current speed
@@ -22,6 +24,8 @@ ReloadMiniWindowPadPermille: i32 = 80
 PerfectReloadFxSecs: f32 = 0.38
 PerfectReloadSfxPath :: "res/reload_perfect.mp3"
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+
 Vec2 :: [2]f32
 Vec2i :: [2]i32
 EntityType :: enum {
@@ -29,41 +33,16 @@ EntityType :: enum {
     Enemy,
     Crosshair,
 }
-VisualData :: struct {
-    texture:          rl.Texture2D,
-    tex_path:         string,
-    tex_scale:        Vec2, // to normalize texture to appropriate size
-    bob_speed:        f32,
-    bob_magnitude:    f32,
-    squash_speed:     f32,
-    squash_magnitude: f32,
-    squash_baseline:  f32,
+EnemyType :: enum {
+    Chaser,
+    Rusher,
+    Strafer,
 }
-Entity :: struct {
-    id:                   int,
-    type:                 EntityType,
-    pos:                  Vec2,
-    move_vel:             Vec2, // volitional movement only (input/AI steering)
-    impulse_vel:          Vec2, // non-volitional movement (kickback, explosions, dashes)
-    radius:               f32,
-    aim_angle:            f32, // degrees
-    move_speed:           f32, // max speed for move_vel only
-    move_accel:           f32, // responsiveness multiplier for move_vel acceleration
-    health:               f32,
-    max_health:           f32,
-    damage:               f32, // contact damage per second
-    hit_flash:            f32, // seconds remaining for damage feedback
-    cant_volitional_move: bool, // whether entity can move of their own volition; momentum and knockback are not affected
-    // Weapons (shared between player and enemies)
-    active_weapon:        WeaponType,
-    weapons:              [WeaponType]WeaponInstance,
-    ballistic_fire_mode:  BallisticFireMode,
-    auto_reload:          bool,
-    owned_weapons:        bit_set[WeaponType],
-    // Enemy AI
-    enemy_type:           EnemyType,
-    ai_state:             EnemyAIState,
-    ai_timer:             f32,
+EnemyAIState :: enum {
+    Idle,
+    Charging,
+    Dashing,
+    Cooldown,
 }
 WeaponType :: enum {
     SMG,
@@ -81,51 +60,14 @@ WeaponState :: enum {
     BeamActive, // cannon: beam firing
     Cooldown, // cannon: post-beam cooldown
 }
+ReloadAction :: enum {
+    None,
+    DropClip,
+    InsertClip,
+}
 BallisticFireMode :: enum {
     ImmediateCooldown, // emit immediately; fire_interval gates next shot
     WindupDelay, // emit only after fire_interval delay
-}
-EnemyType :: enum {
-    Chaser,
-    Rusher,
-    Strafer,
-}
-EnemyAIState :: enum {
-    Idle,
-    Charging,
-    Dashing,
-    Cooldown,
-}
-WeaponInput :: struct {
-    fire_held:    bool, // LMB held (auto-fire, cannon charge)
-    fire_pressed: bool, // LMB just pressed (rifle single-shot)
-    reload:       bool, // R pressed
-    switch_to:    Maybe(WeaponType),
-}
-EntityDef :: struct {
-    type:                   EntityType,
-    enemy_type:             EnemyType, // used when `type == .Enemy`
-    radius:                 f32,
-    move_speed:             f32,
-    move_accel:             f32,
-    health:                 f32,
-    contact_damage:         f32,
-    tint:                   rl.Color, // used when `type == .Enemy`
-    separation_str:         f32,
-    auto_reload:            bool,
-    ballistic_fire_mode:    BallisticFireMode,
-    starting_active_weapon: WeaponType,
-    starting_weapons:       bit_set[WeaponType],
-    charge_telegraph:       f32,
-    dash_speed:             f32,
-    dash_duration:          f32,
-    dash_cooldown:          f32,
-    preferred_dist:         f32,
-    strafe_speed:           f32,
-}
-EnemySpawnBatch :: struct {
-    enemy_type: EnemyType,
-    count:      int,
 }
 WeaponDef :: struct {
     name:              string,
@@ -154,6 +96,47 @@ WeaponDef :: struct {
     clip_drop_time:    f32, // seconds to eject clip
     clip_insert_time:  f32, // seconds to load a new clip
 }
+EntityDef :: struct {
+    type:                   EntityType,
+    enemy_type:             EnemyType, // used when `type == .Enemy`
+    radius:                 f32,
+    move_speed:             f32,
+    move_accel:             f32,
+    health:                 f32,
+    contact_damage:         f32,
+    tint:                   rl.Color, // used when `type == .Enemy`
+    separation_str:         f32,
+    auto_reload:            bool,
+    ballistic_fire_mode:    BallisticFireMode,
+    starting_active_weapon: WeaponType,
+    starting_weapons:       bit_set[WeaponType],
+    charge_telegraph:       f32,
+    dash_speed:             f32,
+    dash_duration:          f32,
+    dash_cooldown:          f32,
+    preferred_dist:         f32,
+    strafe_speed:           f32,
+}
+EnemySpawnBatch :: struct {
+    enemy_type: EnemyType,
+    count:      int,
+}
+VisualData :: struct {
+    texture:          rl.Texture2D,
+    tex_path:         string,
+    tex_scale:        Vec2, // to normalize texture to appropriate size
+    bob_speed:        f32,
+    bob_magnitude:    f32,
+    squash_speed:     f32,
+    squash_magnitude: f32,
+    squash_baseline:  f32,
+}
+WeaponInput :: struct {
+    fire_held:    bool, // LMB held (auto-fire, cannon charge)
+    fire_pressed: bool, // LMB just pressed (rifle single-shot)
+    reload:       bool, // R pressed
+    switch_to:    Maybe(WeaponType),
+}
 WeaponInstance :: struct {
     ammo_in_clip:               int,
     ammo_reserve:               int,
@@ -181,6 +164,32 @@ Particle :: struct {
     max_age:  f32,
     friendly: bool, // true = player-fired (hits enemies), false = enemy-fired (hits player)
 }
+Entity :: struct {
+    id:                   int,
+    type:                 EntityType,
+    pos:                  Vec2,
+    move_vel:             Vec2, // volitional movement only (input/AI steering)
+    impulse_vel:          Vec2, // non-volitional movement (kickback, explosions, dashes)
+    radius:               f32,
+    aim_angle:            f32, // degrees
+    move_speed:           f32, // max speed for move_vel only
+    move_accel:           f32, // responsiveness multiplier for move_vel acceleration
+    health:               f32,
+    max_health:           f32,
+    damage:               f32, // contact damage per second
+    hit_flash:            f32, // seconds remaining for damage feedback
+    cant_volitional_move: bool, // whether entity can move of their own volition; momentum and knockback are not affected
+    // Weapons (shared between player and enemies)
+    active_weapon:        WeaponType,
+    weapons:              [WeaponType]WeaponInstance,
+    ballistic_fire_mode:  BallisticFireMode,
+    auto_reload:          bool,
+    owned_weapons:        bit_set[WeaponType],
+    // Enemy AI
+    enemy_type:           EnemyType,
+    ai_state:             EnemyAIState,
+    ai_timer:             f32,
+}
 GameState :: struct {
     render_size:             Vec2,
     dpi_scaling:             Vec2,
@@ -200,7 +209,247 @@ GameState :: struct {
     debug_frame_ms:          f32,
 }
 
+
+// ── Static Data ────────────────────────────────────────────────────────────────
+
+WeaponDB := [WeaponType]WeaponDef {
+    .SMG = WeaponDef {
+        name = "SMG",
+        sound_path = "res/smg.mp3",
+        fire_interval = 0.065,
+        clip_size = 30,
+        max_ammo = 180,
+        bullet_damage = 5,
+        bullet_speed = 800,
+        bullet_spread = 0.4,
+        bullet_radius = 4,
+        bullet_color = rl.YELLOW,
+        kickback_impulse = 7,
+        shake_impulse = 6,
+        flash_size = 24,
+        flash_duration = 0.05,
+        switch_time = 0.3,
+        clip_drop_time = 0.3,
+        clip_insert_time = 0.8,
+    },
+    .Rifle = WeaponDef {
+        name = "Rifle",
+        sound_path = "res/rifle.mp3",
+        fire_interval = 0.3,
+        clip_size = 10,
+        max_ammo = 60,
+        bullet_damage = 25,
+        bullet_speed = 1200,
+        bullet_spread = 0.15,
+        bullet_radius = 5,
+        bullet_color = rl.RAYWHITE,
+        kickback_impulse = 33,
+        shake_impulse = 21,
+        flash_size = 58,
+        flash_duration = 0.12,
+        switch_time = 0.4,
+        clip_drop_time = 0.3,
+        clip_insert_time = 1.0,
+    },
+    .Tesla = WeaponDef {
+        name = "Tesla Gun",
+        sound_path = "res/tesla_gun.mp3",
+        fire_interval = 0.2,
+        clip_size = 20,
+        max_ammo = 100,
+        bullet_damage = 15,
+        bullet_speed = 1000,
+        bullet_spread = 0.25,
+        bullet_radius = 4,
+        bullet_color = rl.SKYBLUE,
+        kickback_impulse = 12,
+        shake_impulse = 10,
+        flash_size = 0,
+        flash_duration = 0.1,
+        switch_time = 0.35,
+        clip_drop_time = 0.3,
+        clip_insert_time = 0.7,
+    },
+    .Cannon = WeaponDef {
+        name              = "Particle Cannon",
+        sound_path        = "res/cannon_fire.mp3",
+        charge_sound_path = "res/cannon_charge.mp3",
+        clip_size         = 3,
+        max_ammo          = 9,
+        kickback_impulse  = 47,
+        shake_impulse     = 55,
+        // Keep timings close to SFX envelope: charge ~= charge SFX, beam+cooldown ~= fire SFX.
+        charge_time       = CannonChargeSfxSecs *
+        0.98,
+        cooldown_time     = CannonFireSfxSecs *
+        0.35,
+        beam_half_width   = 60,
+        beam_damage       = 300,
+        beam_duration     = CannonFireSfxSecs *
+        0.63,
+        switch_time       = 0.6,
+        clip_drop_time    = 0.4,
+        clip_insert_time  = 1.6,
+    },
+}
+PlayerDB := EntityDef {
+    type                   = .Player,
+    radius                 = 50,
+    move_speed             = 700,
+    move_accel             = 1.0,
+    health                 = 100,
+    ballistic_fire_mode    = .ImmediateCooldown,
+    auto_reload            = false,
+    starting_active_weapon = .SMG,
+    starting_weapons       = {.SMG, .Rifle, .Tesla, .Cannon},
+}
+CrosshairDB := EntityDef {
+    type   = .Crosshair,
+    radius = 20,
+}
+EnemyDB := [EnemyType]EntityDef {
+    .Chaser = EntityDef {
+        type = .Enemy,
+        enemy_type = .Chaser,
+        move_speed = 120,
+        move_accel = 1.2,
+        health = 50,
+        contact_damage = 10,
+        radius = 50,
+        tint = rl.RED,
+        separation_str = 120,
+        auto_reload = true,
+        ballistic_fire_mode = .ImmediateCooldown,
+        starting_active_weapon = .SMG,
+        starting_weapons = {.SMG},
+    },
+    .Rusher = EntityDef {
+        type = .Enemy,
+        enemy_type = .Rusher,
+        move_speed = 80,
+        move_accel = 1.1,
+        health = 30,
+        contact_damage = 15,
+        radius = 50,
+        tint = rl.ORANGE,
+        separation_str = 100,
+        auto_reload = true,
+        ballistic_fire_mode = .ImmediateCooldown,
+        starting_active_weapon = .SMG,
+        starting_weapons = {.SMG},
+        charge_telegraph = 0.6,
+        dash_speed = 560,
+        dash_duration = 0.30,
+        dash_cooldown = 1.1,
+    },
+    .Strafer = EntityDef {
+        type = .Enemy,
+        enemy_type = .Strafer,
+        move_speed = 95,
+        move_accel = 1.2,
+        health = 35,
+        contact_damage = 3,
+        radius = 50,
+        tint = rl.PURPLE,
+        separation_str = 110,
+        auto_reload = true,
+        ballistic_fire_mode = .ImmediateCooldown,
+        starting_active_weapon = .Rifle,
+        starting_weapons = {.Rifle, .Tesla},
+        preferred_dist = 350,
+        strafe_speed = 100,
+    },
+}
+EnemySpawnPlan := [3]EnemySpawnBatch{EnemySpawnBatch{enemy_type = .Chaser, count = 5}, EnemySpawnBatch{enemy_type = .Rusher, count = 3}, EnemySpawnBatch{enemy_type = .Strafer, count = 2}}
+VizDB := [EntityType]VisualData {
+    .Player = VisualData{tex_path = "res/char3.png", tex_scale = Vec2{1, 1} / 300, bob_speed = 15.0, bob_magnitude = 5.0, squash_speed = 2.0, squash_magnitude = 0.25, squash_baseline = 0.9},
+    .Enemy = VisualData{tex_path = "res/enemy.png", tex_scale = Vec2{1, 1} / 300, bob_speed = 10.0, bob_magnitude = 4.0, squash_speed = 1.5, squash_magnitude = 0.2, squash_baseline = 0.8},
+    .Crosshair = VisualData{tex_path = "res/crosshair.png", tex_scale = Vec2{1, 1} / 200, bob_speed = 0.0, bob_magnitude = 0.0, squash_speed = 0.0, squash_magnitude = 0.0, squash_baseline = 0.0},
+}
+
+// ── Globals ────────────────────────────────────────────────────────────────────
+
+st := GameState {
+    camera = rl.Camera2D{zoom = 1.0},
+    flip_by_aim = true,
+    show_debug_overlay = false,
+}
 PerfectReloadSfx: rl.Sound
+
+// ── Init / Cleanup ─────────────────────────────────────────────────────────────
+
+init_assets :: proc() {
+    for &viz in VizDB {
+        path := strings.clone_to_cstring(viz.tex_path, context.temp_allocator)
+        viz.texture = rl.LoadTexture(path)
+    }
+    for &wep in WeaponDB {
+        if wep.sound_path != "" {
+            wep.sound = rl.LoadSound(strings.clone_to_cstring(wep.sound_path, context.temp_allocator))
+        }
+        if wep.charge_sound_path != "" {
+            wep.charge_sound = rl.LoadSound(strings.clone_to_cstring(wep.charge_sound_path, context.temp_allocator))
+        }
+    }
+    PerfectReloadSfx = rl.LoadSound(strings.clone_to_cstring(PerfectReloadSfxPath, context.temp_allocator))
+}
+
+init_game_state :: proc() {
+    spawn_entity :: proc(def: EntityDef, pos: Vec2 = {}) {
+        e := Entity {
+            id                  = len(st.entities),
+            type                = def.type,
+            enemy_type          = def.enemy_type,
+            radius              = def.radius,
+            move_speed          = def.move_speed,
+            move_accel          = def.move_accel,
+            health              = def.health,
+            max_health          = def.health,
+            damage              = def.contact_damage,
+            active_weapon       = def.starting_active_weapon,
+            owned_weapons       = def.starting_weapons,
+            auto_reload         = def.auto_reload,
+            ballistic_fire_mode = def.ballistic_fire_mode,
+        }
+        for w in WeaponType {
+            if w not_in def.starting_weapons {continue}
+            wdef := WeaponDB[w]
+            e.weapons[w] = WeaponInstance {
+                ammo_in_clip = wdef.clip_size,
+                ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
+            }
+        }
+        e.pos = pos
+        append(&st.entities, e)
+    }
+    random_enemy_spawn_pos :: proc() -> Vec2 {
+        return Vec2{f32(rl.GetRandomValue(-900, 900)), f32(rl.GetRandomValue(-500, 500))}
+    }
+
+    spawn_entity(PlayerDB)
+    spawn_entity(CrosshairDB)
+    for batch in EnemySpawnPlan {
+        def := EnemyDB[batch.enemy_type]
+        for _ in 0 ..< batch.count {
+            spawn_entity(def, random_enemy_spawn_pos())
+        }
+    }
+}
+
+cleanup_resources :: proc() {
+    delete(st.entities)
+    delete(st.particles)
+    for &viz in VizDB {rl.UnloadTexture(viz.texture)}
+    for &wep in WeaponDB {
+        rl.UnloadSound(wep.sound)
+        rl.UnloadSound(wep.charge_sound)
+    }
+    rl.UnloadSound(PerfectReloadSfx)
+    rl.CloseAudioDevice()
+    rl.CloseWindow()
+}
+
+// ── Shared Helpers ─────────────────────────────────────────────────────────────
 
 vec2 :: proc(v: Vec2i) -> Vec2 {return Vec2{f32(v.x), f32(v.y)}}
 
@@ -209,6 +458,8 @@ draw_text :: proc(pos: Vec2, size: f32, fmtstring: string, args: ..any) {
     cs := strings.clone_to_cstring(s, context.temp_allocator)
     rl.DrawText(cs, i32(pos.x), i32(pos.y), i32(size), rl.RAYWHITE)
 }
+
+// ── Weapon Systems ─────────────────────────────────────────────────────────────
 
 enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32) {
     inst.state = new_state
@@ -231,12 +482,6 @@ enter_clip_insert :: proc(inst: ^WeaponInstance, def: WeaponDef) {
 
 enter_clip_drop :: proc(inst: ^WeaponInstance, def: WeaponDef) {
     enter_state(inst, .ClipDrop, def.clip_drop_time)
-}
-
-ReloadAction :: enum {
-    None,
-    DropClip,
-    InsertClip,
 }
 
 calc_reload_action :: proc(ammo_in_clip: int, ammo_reserve: int) -> ReloadAction {
@@ -477,236 +722,7 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
     if inst.muzzle_flash_timer > 0 {inst.muzzle_flash_timer = max(0, inst.muzzle_flash_timer - dt)}
 }
 
-init_assets :: proc() {
-    for &viz in VizDB {
-        path := strings.clone_to_cstring(viz.tex_path, context.temp_allocator)
-        viz.texture = rl.LoadTexture(path)
-    }
-    for &wep in WeaponDB {
-        if wep.sound_path != "" {
-            wep.sound = rl.LoadSound(strings.clone_to_cstring(wep.sound_path, context.temp_allocator))
-        }
-        if wep.charge_sound_path != "" {
-            wep.charge_sound = rl.LoadSound(strings.clone_to_cstring(wep.charge_sound_path, context.temp_allocator))
-        }
-    }
-    PerfectReloadSfx = rl.LoadSound(strings.clone_to_cstring(PerfectReloadSfxPath, context.temp_allocator))
-}
-
-init_game_state :: proc() {
-    spawn_entity :: proc(def: EntityDef, pos: Vec2 = {}) {
-        e := Entity {
-            id                  = len(st.entities),
-            type                = def.type,
-            enemy_type          = def.enemy_type,
-            radius              = def.radius,
-            move_speed          = def.move_speed,
-            move_accel          = def.move_accel,
-            health              = def.health,
-            max_health          = def.health,
-            damage              = def.contact_damage,
-            active_weapon       = def.starting_active_weapon,
-            owned_weapons       = def.starting_weapons,
-            auto_reload         = def.auto_reload,
-            ballistic_fire_mode = def.ballistic_fire_mode,
-        }
-        for w in WeaponType {
-            if w not_in def.starting_weapons {continue}
-            wdef := WeaponDB[w]
-            e.weapons[w] = WeaponInstance {
-                ammo_in_clip = wdef.clip_size,
-                ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
-            }
-        }
-        e.pos = pos
-        append(&st.entities, e)
-    }
-    random_enemy_spawn_pos :: proc() -> Vec2 {
-        return Vec2{f32(rl.GetRandomValue(-900, 900)), f32(rl.GetRandomValue(-500, 500))}
-    }
-
-    spawn_entity(PlayerDB)
-    spawn_entity(CrosshairDB)
-    for batch in EnemySpawnPlan {
-        def := EnemyDB[batch.enemy_type]
-        for _ in 0 ..< batch.count {
-            spawn_entity(def, random_enemy_spawn_pos())
-        }
-    }
-}
-
-cleanup_resources :: proc() {
-    delete(st.entities)
-    delete(st.particles)
-    for &viz in VizDB {rl.UnloadTexture(viz.texture)}
-    for &wep in WeaponDB {
-        rl.UnloadSound(wep.sound)
-        rl.UnloadSound(wep.charge_sound)
-    }
-    rl.UnloadSound(PerfectReloadSfx)
-    rl.CloseAudioDevice()
-    rl.CloseWindow()
-}
-
-VizDB := [EntityType]VisualData {
-    .Player = VisualData{tex_path = "res/char3.png", tex_scale = Vec2{1, 1} / 300, bob_speed = 15.0, bob_magnitude = 5.0, squash_speed = 2.0, squash_magnitude = 0.25, squash_baseline = 0.9},
-    .Enemy = VisualData{tex_path = "res/enemy.png", tex_scale = Vec2{1, 1} / 300, bob_speed = 10.0, bob_magnitude = 4.0, squash_speed = 1.5, squash_magnitude = 0.2, squash_baseline = 0.8},
-    .Crosshair = VisualData{tex_path = "res/crosshair.png", tex_scale = Vec2{1, 1} / 200, bob_speed = 0.0, bob_magnitude = 0.0, squash_speed = 0.0, squash_magnitude = 0.0, squash_baseline = 0.0},
-}
-WeaponDB := [WeaponType]WeaponDef {
-    .SMG = WeaponDef {
-        name = "SMG",
-        sound_path = "res/smg.mp3",
-        fire_interval = 0.065,
-        clip_size = 30,
-        max_ammo = 180,
-        bullet_damage = 5,
-        bullet_speed = 800,
-        bullet_spread = 0.4,
-        bullet_radius = 4,
-        bullet_color = rl.YELLOW,
-        kickback_impulse = 7,
-        shake_impulse = 6,
-        flash_size = 24,
-        flash_duration = 0.05,
-        switch_time = 0.3,
-        clip_drop_time = 0.3,
-        clip_insert_time = 0.8,
-    },
-    .Rifle = WeaponDef {
-        name = "Rifle",
-        sound_path = "res/rifle.mp3",
-        fire_interval = 0.3,
-        clip_size = 10,
-        max_ammo = 60,
-        bullet_damage = 25,
-        bullet_speed = 1200,
-        bullet_spread = 0.15,
-        bullet_radius = 5,
-        bullet_color = rl.RAYWHITE,
-        kickback_impulse = 33,
-        shake_impulse = 21,
-        flash_size = 58,
-        flash_duration = 0.12,
-        switch_time = 0.4,
-        clip_drop_time = 0.3,
-        clip_insert_time = 1.0,
-    },
-    .Tesla = WeaponDef {
-        name = "Tesla Gun",
-        sound_path = "res/tesla_gun.mp3",
-        fire_interval = 0.2,
-        clip_size = 20,
-        max_ammo = 100,
-        bullet_damage = 15,
-        bullet_speed = 1000,
-        bullet_spread = 0.25,
-        bullet_radius = 4,
-        bullet_color = rl.SKYBLUE,
-        kickback_impulse = 12,
-        shake_impulse = 10,
-        flash_size = 0,
-        flash_duration = 0.1,
-        switch_time = 0.35,
-        clip_drop_time = 0.3,
-        clip_insert_time = 0.7,
-    },
-    .Cannon = WeaponDef {
-        name              = "Particle Cannon",
-        sound_path        = "res/cannon_fire.mp3",
-        charge_sound_path = "res/cannon_charge.mp3",
-        clip_size         = 3,
-        max_ammo          = 9,
-        kickback_impulse  = 47,
-        shake_impulse     = 55,
-        // Keep timings close to SFX envelope: charge ~= charge SFX, beam+cooldown ~= fire SFX.
-        charge_time       = CannonChargeSfxSecs *
-        0.98,
-        cooldown_time     = CannonFireSfxSecs *
-        0.35,
-        beam_half_width   = 60,
-        beam_damage       = 300,
-        beam_duration     = CannonFireSfxSecs *
-        0.63,
-        switch_time       = 0.6,
-        clip_drop_time    = 0.4,
-        clip_insert_time  = 1.6,
-    },
-}
-PlayerDB := EntityDef {
-    type                   = .Player,
-    radius                 = 50,
-    move_speed             = 700,
-    move_accel             = 1.0,
-    health                 = 100,
-    ballistic_fire_mode    = .ImmediateCooldown,
-    auto_reload            = false,
-    starting_active_weapon = .SMG,
-    starting_weapons       = {.SMG, .Rifle, .Tesla, .Cannon},
-}
-CrosshairDB := EntityDef {
-    type   = .Crosshair,
-    radius = 20,
-}
-EnemyDB := [EnemyType]EntityDef {
-    .Chaser = EntityDef {
-        type = .Enemy,
-        enemy_type = .Chaser,
-        move_speed = 120,
-        move_accel = 1.2,
-        health = 50,
-        contact_damage = 10,
-        radius = 50,
-        tint = rl.RED,
-        separation_str = 120,
-        auto_reload = true,
-        ballistic_fire_mode = .ImmediateCooldown,
-        starting_active_weapon = .SMG,
-        starting_weapons = {.SMG},
-    },
-    .Rusher = EntityDef {
-        type = .Enemy,
-        enemy_type = .Rusher,
-        move_speed = 80,
-        move_accel = 1.1,
-        health = 30,
-        contact_damage = 15,
-        radius = 50,
-        tint = rl.ORANGE,
-        separation_str = 100,
-        auto_reload = true,
-        ballistic_fire_mode = .ImmediateCooldown,
-        starting_active_weapon = .SMG,
-        starting_weapons = {.SMG},
-        charge_telegraph = 0.6,
-        dash_speed = 560,
-        dash_duration = 0.30,
-        dash_cooldown = 1.1,
-    },
-    .Strafer = EntityDef {
-        type = .Enemy,
-        enemy_type = .Strafer,
-        move_speed = 95,
-        move_accel = 1.2,
-        health = 35,
-        contact_damage = 3,
-        radius = 50,
-        tint = rl.PURPLE,
-        separation_str = 110,
-        auto_reload = true,
-        ballistic_fire_mode = .ImmediateCooldown,
-        starting_active_weapon = .Rifle,
-        starting_weapons = {.Rifle, .Tesla},
-        preferred_dist = 350,
-        strafe_speed = 100,
-    },
-}
-EnemySpawnPlan := [3]EnemySpawnBatch{EnemySpawnBatch{enemy_type = .Chaser, count = 5}, EnemySpawnBatch{enemy_type = .Rusher, count = 3}, EnemySpawnBatch{enemy_type = .Strafer, count = 2}}
-st := GameState {
-    camera = rl.Camera2D{zoom = 1.0},
-    flip_by_aim = true,
-    show_debug_overlay = false,
-}
+// ── Gameplay Update ────────────────────────────────────────────────────────────
 
 update_gameplay :: proc() {
     dt := rl.GetFrameTime()
@@ -1036,6 +1052,8 @@ update_gameplay :: proc() {
     }
 }
 
+// ── Rendering ──────────────────────────────────────────────────────────────────
+
 render_frame :: proc() {
     draw_tex :: proc(tex: rl.Texture2D, pos: Vec2, scale: Vec2, angle: f32, flipH: bool = false, tint: rl.Color = rl.WHITE) {
         src_size := vec2({tex.width, tex.height})
@@ -1332,6 +1350,8 @@ render_frame :: proc() {
 
     rl.EndDrawing()
 }
+
+// ── Main Loop ──────────────────────────────────────────────────────────────────
 
 main :: proc() {
     when DEBUG_MEMORY {

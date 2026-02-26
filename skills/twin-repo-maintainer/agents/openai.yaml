@@ -1,0 +1,7 @@
+interface:
+  display_name: "Twin Repo Maintainer"
+  short_description: "Organizes Twin's Odin code consistently."
+  default_prompt: "Use $twin-repo-maintainer to reorganize this Twin code change while preserving behavior."
+
+policy:
+  allow_implicit_invocation: true
