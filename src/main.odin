@@ -203,19 +203,11 @@ GameState :: struct {
 PerfectReloadSfx: rl.Sound
 
 vec2 :: proc(v: Vec2i) -> Vec2 {return Vec2{f32(v.x), f32(v.y)}}
-vec2i :: proc(v: Vec2) -> Vec2i {return Vec2i{i32(v.x), i32(v.y)}}
 
 draw_text :: proc(pos: Vec2, size: f32, fmtstring: string, args: ..any) {
     s := fmt.tprintf(fmtstring, ..args)
     cs := strings.clone_to_cstring(s, context.temp_allocator)
     rl.DrawText(cs, i32(pos.x), i32(pos.y), i32(size), rl.RAYWHITE)
-}
-draw_tex :: proc(tex: rl.Texture2D, pos: Vec2, scale: Vec2, angle: f32, flipH: bool = false, tint: rl.Color = rl.WHITE) {
-    src_size := vec2({tex.width, tex.height})
-    src_rect := rl.Rectangle{0, 0, src_size.x if !flipH else -src_size.x, src_size.y}
-    dest_size := src_size * scale
-    dest_rect := rl.Rectangle{pos.x, pos.y, dest_size.x, dest_size.y}
-    rl.DrawTexturePro(tex, src_rect, dest_rect, dest_size / 2, angle, tint)
 }
 
 enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32) {
@@ -277,16 +269,6 @@ spawn_hit_sparks :: proc(origin: Vec2, color: rl.Color, count: int = 5) {
     }
 }
 
-spawn_perfect_reload_fanfare :: proc(origin: Vec2) {
-    for i in 0 ..< 18 {
-        ang := math.to_radians(f32(i) * (360.0 / 18.0)) + f32(rl.GetRandomValue(-120, 120)) / 1000.0
-        speed := f32(rl.GetRandomValue(280, 620))
-        vel := Vec2{math.cos(ang), math.sin(ang)} * speed
-        col := rl.YELLOW if i % 2 == 0 else rl.LIME
-        append(&st.particles, Particle{pos = origin, vel = vel, radius = f32(rl.GetRandomValue(3, 6)), color = col, max_age = f32(rl.GetRandomValue(22, 55)) / 100.0})
-    }
-}
-
 fire_bullet :: proc(entity: ^Entity, inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32) {
     spread := aim_rad + (f32(rl.GetRandomValue(-1000, 1000)) / 1000.0) * def.bullet_spread
     vel := Vec2{math.cos(spread), math.sin(spread)} * def.bullet_speed
@@ -335,26 +317,17 @@ process_ballistic_firing_state :: proc(entity: ^Entity, inst: ^WeaponInstance, d
     }
 }
 
-draw_cannon_beam :: proc(beam_angle_deg: f32, beam_timer: f32) {
-    def := WeaponDB[.Cannon]
-    beam_rad := math.to_radians(beam_angle_deg)
-    dir := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
-    perp := Vec2{-math.sin(beam_rad), math.cos(beam_rad)}
-    origin := st.player.pos + dir * (st.player.radius + 15)
-    beam_end := origin + dir * 3000
-    t := max(f32(0), 1 - beam_timer / def.beam_duration)
-    outer_alpha := f32(0.84) * t
-    ow := def.beam_half_width * 1.33
-    cw := def.beam_half_width * 0.53
-    oc := rl.Fade(rl.RAYWHITE, outer_alpha)
-    cc := rl.Fade(rl.YELLOW, outer_alpha * 0.7)
-    rl.DrawTriangle(origin + perp * ow, beam_end + perp * ow, beam_end - perp * ow, oc)
-    rl.DrawTriangle(beam_end - perp * ow, origin - perp * ow, origin + perp * ow, oc)
-    rl.DrawTriangle(origin + perp * cw, beam_end + perp * cw, beam_end - perp * cw, cc)
-    rl.DrawTriangle(beam_end - perp * cw, origin - perp * cw, origin + perp * cw, cc)
-}
-
 update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
+    spawn_perfect_reload_fanfare :: proc(origin: Vec2) {
+        for i in 0 ..< 18 {
+            ang := math.to_radians(f32(i) * (360.0 / 18.0)) + f32(rl.GetRandomValue(-120, 120)) / 1000.0
+            speed := f32(rl.GetRandomValue(280, 620))
+            vel := Vec2{math.cos(ang), math.sin(ang)} * speed
+            col := rl.YELLOW if i % 2 == 0 else rl.LIME
+            append(&st.particles, Particle{pos = origin, vel = vel, radius = f32(rl.GetRandomValue(3, 6)), color = col, max_age = f32(rl.GetRandomValue(22, 55)) / 100.0})
+        }
+    }
+
     def := WeaponDB[entity.active_weapon]
     inst := &entity.weapons[entity.active_weapon]
 
@@ -520,44 +493,38 @@ init_assets :: proc() {
     PerfectReloadSfx = rl.LoadSound(strings.clone_to_cstring(PerfectReloadSfxPath, context.temp_allocator))
 }
 
-new_entity_from_def :: proc(id: int, def: EntityDef) -> Entity {
-    e := Entity {
-        id                  = id,
-        type                = def.type,
-        enemy_type          = def.enemy_type,
-        radius              = def.radius,
-        move_speed          = def.move_speed,
-        move_accel          = def.move_accel,
-        health              = def.health,
-        max_health          = def.health,
-        damage              = def.contact_damage,
-        active_weapon       = def.starting_active_weapon,
-        owned_weapons       = def.starting_weapons,
-        auto_reload         = def.auto_reload,
-        ballistic_fire_mode = def.ballistic_fire_mode,
-    }
-    for w in WeaponType {
-        if w not_in def.starting_weapons {continue}
-        wdef := WeaponDB[w]
-        e.weapons[w] = WeaponInstance {
-            ammo_in_clip = wdef.clip_size,
-            ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
-        }
-    }
-    return e
-}
-
-spawn_entity :: proc(def: EntityDef, pos: Vec2 = {}) {
-    e := new_entity_from_def(len(st.entities), def)
-    e.pos = pos
-    append(&st.entities, e)
-}
-
-random_enemy_spawn_pos :: proc() -> Vec2 {
-    return Vec2{f32(rl.GetRandomValue(-900, 900)), f32(rl.GetRandomValue(-500, 500))}
-}
-
 init_game_state :: proc() {
+    spawn_entity :: proc(def: EntityDef, pos: Vec2 = {}) {
+        e := Entity {
+            id                  = len(st.entities),
+            type                = def.type,
+            enemy_type          = def.enemy_type,
+            radius              = def.radius,
+            move_speed          = def.move_speed,
+            move_accel          = def.move_accel,
+            health              = def.health,
+            max_health          = def.health,
+            damage              = def.contact_damage,
+            active_weapon       = def.starting_active_weapon,
+            owned_weapons       = def.starting_weapons,
+            auto_reload         = def.auto_reload,
+            ballistic_fire_mode = def.ballistic_fire_mode,
+        }
+        for w in WeaponType {
+            if w not_in def.starting_weapons {continue}
+            wdef := WeaponDB[w]
+            e.weapons[w] = WeaponInstance {
+                ammo_in_clip = wdef.clip_size,
+                ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
+            }
+        }
+        e.pos = pos
+        append(&st.entities, e)
+    }
+    random_enemy_spawn_pos :: proc() -> Vec2 {
+        return Vec2{f32(rl.GetRandomValue(-900, 900)), f32(rl.GetRandomValue(-500, 500))}
+    }
+
     spawn_entity(PlayerDB)
     spawn_entity(CrosshairDB)
     for batch in EnemySpawnPlan {
@@ -1008,7 +975,7 @@ update_gameplay :: proc() {
 
     {     // Damage, collisions, and cleanup (co-located)
         // Shared helper to keep particle and entity-contact damage feedback consistent.
-        apply_damage_with_flash := proc(e: ^Entity, damage: f32, flash_secs: f32) {
+        apply_damage_with_flash :: proc(e: ^Entity, damage: f32, flash_secs: f32) {
             if damage <= 0 {return}
             e.health -= damage
             e.hit_flash = max(e.hit_flash, flash_secs)
@@ -1070,6 +1037,32 @@ update_gameplay :: proc() {
 }
 
 render_frame :: proc() {
+    draw_tex :: proc(tex: rl.Texture2D, pos: Vec2, scale: Vec2, angle: f32, flipH: bool = false, tint: rl.Color = rl.WHITE) {
+        src_size := vec2({tex.width, tex.height})
+        src_rect := rl.Rectangle{0, 0, src_size.x if !flipH else -src_size.x, src_size.y}
+        dest_size := src_size * scale
+        dest_rect := rl.Rectangle{pos.x, pos.y, dest_size.x, dest_size.y}
+        rl.DrawTexturePro(tex, src_rect, dest_rect, dest_size / 2, angle, tint)
+    }
+    draw_cannon_beam :: proc(beam_angle_deg: f32, beam_timer: f32) {
+        def := WeaponDB[.Cannon]
+        beam_rad := math.to_radians(beam_angle_deg)
+        dir := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
+        perp := Vec2{-math.sin(beam_rad), math.cos(beam_rad)}
+        origin := st.player.pos + dir * (st.player.radius + 15)
+        beam_end := origin + dir * 3000
+        t := max(f32(0), 1 - beam_timer / def.beam_duration)
+        outer_alpha := f32(0.84) * t
+        ow := def.beam_half_width * 1.33
+        cw := def.beam_half_width * 0.53
+        oc := rl.Fade(rl.RAYWHITE, outer_alpha)
+        cc := rl.Fade(rl.YELLOW, outer_alpha * 0.7)
+        rl.DrawTriangle(origin + perp * ow, beam_end + perp * ow, beam_end - perp * ow, oc)
+        rl.DrawTriangle(beam_end - perp * ow, origin - perp * ow, origin + perp * ow, oc)
+        rl.DrawTriangle(origin + perp * cw, beam_end + perp * cw, beam_end - perp * cw, cc)
+        rl.DrawTriangle(beam_end - perp * cw, origin - perp * cw, origin + perp * cw, cc)
+    }
+
     rl.BeginDrawing()
     rl.ClearBackground(rl.BROWN)
     rl.BeginMode2D(st.camera)
@@ -1346,7 +1339,7 @@ main :: proc() {
         mem.tracking_allocator_init(&tracking_allocator, context.allocator)
         context.allocator = mem.tracking_allocator(&tracking_allocator)
 
-        print_alloc_stats := proc(tracking: ^mem.Tracking_Allocator) {
+        print_alloc_stats :: proc(tracking: ^mem.Tracking_Allocator) {
             for _, entry in tracking.allocation_map {
                 fmt.printfln("%v: Leaked %v bytes", entry.location, entry.size)
             }

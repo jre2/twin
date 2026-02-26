@@ -30,6 +30,8 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Switched localized helper procs to local constants (`:: proc`) instead of mutable proc vars (`:= proc`) for clearer intent.
+- [x] Scoped several single-use helpers into their callers (`spawn_entity`, `random_enemy_spawn_pos`, `draw_tex`, `draw_cannon_beam`, `spawn_perfect_reload_fanfare`) and removed dead/redundant globals.
 - [x] Removed redundant explicit `ai_state = .Idle` spawn assignment; entity zero-init already defaults enemy AI state to `Idle`.
 - [x] Simplified `init_game_state` with shared spawn helpers (`spawn_entity`, `random_enemy_spawn_pos`) and a data-driven `EnemySpawnPlan`.
 - [x] Unified player/enemy/crosshair startup data under shared `EntityDef`-based DB entries and removed init-time hardcoded loadout/ammo wiring.
