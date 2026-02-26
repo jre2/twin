@@ -29,6 +29,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Unified enemy radii across archetypes so differentiation is driven by tint/behavior instead of size differences.
 - [x] Reworked movement into separate volitional and impulse velocity channels, so kickback/explosions/dashes are no longer constrained by normal movement speed caps.
 - [x] Improved rusher dash behavior (smarter charge timing/targeting, stronger dash travel, and clearer dash-state VFX/debug feedback).
 - [x] Implemented baseline enemy AI with steering/separation, shared weapon FSM usage, and data-driven EnemyDB spawning.
