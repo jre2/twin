@@ -3,7 +3,8 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Resolve weapon ownership model (`available_weapons` vs implied-by-ammo/loadout) and implement one consistent rule.
+- [ ] Resolve weapon ownership source-of-truth (`loadout` vs `available_weapons`) and remove redundant ownership checks from weapon switch/fire logic.
+- [ ] Define and enforce one ownership rule for empty weapons (owned-but-empty vs unavailable), including Strafer rifle/tesla fallback behavior.
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 - [ ] Review enemy sounds and whether toggles like `auto_reload`/fire mode should live per-entity or in global game state.
 - [ ] Tune new enemy archetype balance (Chaser/Rusher/Strafer movement constants, fire ranges, and loadout pacing) after playtesting.
@@ -11,14 +12,14 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 ## Next
 - [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
 - [ ] Player death VFX and respawn animation (depends on game flow states).
-- [ ] Store `dt` on `GameState` once per frame and use `st.dt` everywhere instead of repeated `GetFrameTime()` calls.
 - [ ] Damage number popups (floating text particles on hit showing damage dealt).
 - [ ] Empty-clip auto-reload: when firing empties the clip, auto-chain into `ClipDrop` → `ClipInsert`.
 - [ ] Implement a real gameplay effect for `perfect_reload_clip` (currently HUD/state only).
-- [ ] Finalize the unified damage/collision/cleanup section so particle and entity damage rules stay co-located and evolve together.
+- [ ] Unify beam damage with the shared damage/collision pipeline so bullets, beam, and contact hits use consistent rules/feedback and remain co-located.
 - [ ] Add pickup/ammo economy hooks to support longer runs.
 - [ ] Add a simple pause/settings screen (audio sliders, controls legend, restart button), including controls for toggles like debug overlay and fire mode.
 - [ ] Full loop-style pass across the codebase; make loops more idiomatic Odin (`for x in xs` where feasible, cleaner index loops where mutation/removal requires indices).
+- [ ] Add AI regression tests for enemy behavior (rusher dash state transitions/trigger conditions and strafer orbit-range + weapon-switch decisions).
 
 ## Later
 - [ ] Expand test coverage beyond FSM regressions (ammo economy, wave scaling math, and collision edge cases).
@@ -29,6 +30,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Standardized gameplay timing to one `dt := GetFrameTime()` read per update step (frame-ms timing remains separate for debug overlay).
 - [x] Unified enemy radii across archetypes so differentiation is driven by tint/behavior instead of size differences.
 - [x] Reworked movement into separate volitional and impulse velocity channels, so kickback/explosions/dashes are no longer constrained by normal movement speed caps.
 - [x] Improved rusher dash behavior (smarter charge timing/targeting, stronger dash travel, and clearer dash-state VFX/debug feedback).
