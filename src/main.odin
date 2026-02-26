@@ -398,28 +398,28 @@ init_assets :: proc() {
 }
 
 init_game_state :: proc() {
-    spawn_entity :: proc(def: EntityDef, pos: Vec2 = {}) {
+    spawn_entity :: proc(entity_def: EntityDef, pos: Vec2 = {}) {
         e := Entity {
             id                  = len(st.entities),
-            type                = def.type,
-            enemy_type          = def.enemy_type,
-            radius              = def.radius,
-            move_speed          = def.move_speed,
-            move_accel          = def.move_accel,
-            health              = def.health,
-            max_health          = def.health,
-            damage              = def.contact_damage,
-            active_weapon       = def.starting_active_weapon,
-            owned_weapons       = def.starting_weapons,
-            auto_reload         = def.auto_reload,
-            ballistic_fire_mode = def.ballistic_fire_mode,
+            type                = entity_def.type,
+            enemy_type          = entity_def.enemy_type,
+            radius              = entity_def.radius,
+            move_speed          = entity_def.move_speed,
+            move_accel          = entity_def.move_accel,
+            health              = entity_def.health,
+            max_health          = entity_def.health,
+            damage              = entity_def.contact_damage,
+            active_weapon       = entity_def.starting_active_weapon,
+            owned_weapons       = entity_def.starting_weapons,
+            auto_reload         = entity_def.auto_reload,
+            ballistic_fire_mode = entity_def.ballistic_fire_mode,
         }
         for w in WeaponType {
             if w not_in e.owned_weapons {continue}
-            wdef := WeaponDB[w]
+            wpn_def := WeaponDB[w]
             e.weapons[w] = WeaponInstance {
-                ammo_in_clip = wdef.clip_size,
-                ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
+                ammo_in_clip = wpn_def.clip_size,
+                ammo_reserve = max(0, wpn_def.max_ammo - wpn_def.clip_size),
             }
         }
         e.pos = pos
@@ -432,9 +432,9 @@ init_game_state :: proc() {
     spawn_entity(PlayerDB)
     spawn_entity(CrosshairDB)
     for batch in EnemySpawnPlan {
-        def := EnemyDB[batch.enemy_type]
+        enemy_def := EnemyDB[batch.enemy_type]
         for _ in 0 ..< batch.count {
-            spawn_entity(def, random_enemy_spawn_pos())
+            spawn_entity(enemy_def, random_enemy_spawn_pos())
         }
     }
 }
@@ -479,21 +479,21 @@ enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32
     inst.state_duration = duration
 }
 
-enter_clip_insert :: proc(inst: ^WeaponInstance, def: WeaponDef) {
+enter_clip_insert :: proc(wpn_inst: ^WeaponInstance, wpn_def: WeaponDef) {
     window_w := rl.GetRandomValue(ReloadMiniWindowMinPermille, ReloadMiniWindowMaxPermille)
     start_min := ReloadMiniWindowPadPermille
     start_max := 1000 - ReloadMiniWindowPadPermille - window_w
     if start_max < start_min {start_max = start_min}
     window_start := rl.GetRandomValue(start_min, start_max)
-    inst.reload_window_start = f32(window_start) / 1000.0
-    inst.reload_window_end = f32(window_start + window_w) / 1000.0
-    inst.reload_window_spent = false
-    inst.reload_perfect_this_insert = false
-    enter_state(inst, .ClipInsert, def.clip_insert_time)
+    wpn_inst.reload_window_start = f32(window_start) / 1000.0
+    wpn_inst.reload_window_end = f32(window_start + window_w) / 1000.0
+    wpn_inst.reload_window_spent = false
+    wpn_inst.reload_perfect_this_insert = false
+    enter_state(wpn_inst, .ClipInsert, wpn_def.clip_insert_time)
 }
 
-enter_clip_drop :: proc(inst: ^WeaponInstance, def: WeaponDef) {
-    enter_state(inst, .ClipDrop, def.clip_drop_time)
+enter_clip_drop :: proc(wpn_inst: ^WeaponInstance, wpn_def: WeaponDef) {
+    enter_state(wpn_inst, .ClipDrop, wpn_def.clip_drop_time)
 }
 
 calc_reload_action :: proc(ammo_in_clip: int, ammo_reserve: int) -> ReloadAction {
@@ -526,58 +526,58 @@ spawn_hit_sparks :: proc(origin: Vec2, color: rl.Color, count: int = 5) {
     }
 }
 
-fire_bullet :: proc(entity: ^Entity, inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32) {
-    spread := aim_rad + (f32(rl.GetRandomValue(-1000, 1000)) / 1000.0) * def.bullet_spread
-    vel := Vec2{math.cos(spread), math.sin(spread)} * def.bullet_speed
+fire_bullet :: proc(entity: ^Entity, wpn_inst: ^WeaponInstance, wpn_def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32) {
+    spread := aim_rad + (f32(rl.GetRandomValue(-1000, 1000)) / 1000.0) * wpn_def.bullet_spread
+    vel := Vec2{math.cos(spread), math.sin(spread)} * wpn_def.bullet_speed
     friendly := entity.type == .Player
-    append(&st.particles, Particle{pos = muzzle_pos, vel = vel, radius = def.bullet_radius, damage = def.bullet_damage, color = def.bullet_color, max_age = 3.0, friendly = friendly})
-    inst.ammo_in_clip -= 1
-    apply_kickback(entity, aim_rad, def.kickback_impulse)
-    inst.muzzle_flash_timer = def.flash_duration
-    shake := def.shake_impulse if entity.type == .Player else def.shake_impulse * 0.05
+    append(&st.particles, Particle{pos = muzzle_pos, vel = vel, radius = wpn_def.bullet_radius, damage = wpn_def.bullet_damage, color = wpn_def.bullet_color, max_age = 3.0, friendly = friendly})
+    wpn_inst.ammo_in_clip -= 1
+    apply_kickback(entity, aim_rad, wpn_def.kickback_impulse)
+    wpn_inst.muzzle_flash_timer = wpn_def.flash_duration
+    shake := wpn_def.shake_impulse if entity.type == .Player else wpn_def.shake_impulse * 0.05
     st.camera_shake = max(st.camera_shake, shake)
-    rl.PlaySound(def.sound)
+    rl.PlaySound(wpn_def.sound)
 }
 
-process_ballistic_firing_state :: proc(entity: ^Entity, inst: ^WeaponInstance, def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32, input: WeaponInput) {
-    if inst.state != .Firing {
+process_ballistic_firing_state :: proc(entity: ^Entity, wpn_inst: ^WeaponInstance, wpn_def: WeaponDef, muzzle_pos: Vec2, aim_rad: f32, input: WeaponInput) {
+    if wpn_inst.state != .Firing {
         return
     }
 
-    fire_on_entry := inst.fire_on_firing_enter
+    fire_on_entry := wpn_inst.fire_on_firing_enter
     if fire_on_entry {
-        inst.fire_on_firing_enter = false
-    } else if inst.state_timer < inst.state_duration {
+        wpn_inst.fire_on_firing_enter = false
+    } else if wpn_inst.state_timer < wpn_inst.state_duration {
         return
     }
 
     fired := false
     switch entity.active_weapon {
     case .SMG, .Tesla:
-        can_fire := input.fire_held || fire_on_entry if entity.ballistic_fire_mode == .ImmediateCooldown else (inst.fire_queued || input.fire_held)
-        if can_fire && inst.ammo_in_clip > 0 {
-            fire_bullet(entity, inst, def, muzzle_pos, aim_rad)
-            inst.state_timer = 0
-            inst.state_duration = def.fire_interval
-            inst.fire_queued = false
+        can_fire := input.fire_held || fire_on_entry if entity.ballistic_fire_mode == .ImmediateCooldown else (wpn_inst.fire_queued || input.fire_held)
+        if can_fire && wpn_inst.ammo_in_clip > 0 {
+            fire_bullet(entity, wpn_inst, wpn_def, muzzle_pos, aim_rad)
+            wpn_inst.state_timer = 0
+            wpn_inst.state_duration = wpn_def.fire_interval
+            wpn_inst.fire_queued = false
             fired = true
         }
     case .Rifle:
         wants_rifle_fire := input.fire_pressed || fire_on_entry
-        can_fire := wants_rifle_fire if entity.ballistic_fire_mode == .ImmediateCooldown else inst.fire_queued
-        if can_fire && inst.ammo_in_clip > 0 {
-            fire_bullet(entity, inst, def, muzzle_pos, aim_rad)
-            inst.state_timer = 0
-            inst.state_duration = def.fire_interval
-            inst.fire_queued = false
+        can_fire := wants_rifle_fire if entity.ballistic_fire_mode == .ImmediateCooldown else wpn_inst.fire_queued
+        if can_fire && wpn_inst.ammo_in_clip > 0 {
+            fire_bullet(entity, wpn_inst, wpn_def, muzzle_pos, aim_rad)
+            wpn_inst.state_timer = 0
+            wpn_inst.state_duration = wpn_def.fire_interval
+            wpn_inst.fire_queued = false
             fired = true
         }
     case .Cannon:
     }
 
     if !fired {
-        inst.fire_queued = false
-        enter_state(inst, .Idle, 0)
+        wpn_inst.fire_queued = false
+        enter_state(wpn_inst, .Idle, 0)
     }
 }
 
@@ -592,8 +592,8 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
         }
     }
 
-    def := WeaponDB[entity.active_weapon]
-    inst := &entity.weapons[entity.active_weapon]
+    wpn_def := WeaponDB[entity.active_weapon]
+    wpn_inst := &entity.weapons[entity.active_weapon]
 
     aim_rad := math.to_radians(entity.aim_angle)
     aim_dir := Vec2{math.cos(aim_rad), math.sin(aim_rad)}
@@ -601,76 +601,76 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
 
     is_player := entity.type == .Player
 
-    inst.state_timer += dt
+    wpn_inst.state_timer += dt
 
-    switch inst.state {
+    switch wpn_inst.state {
     case .Idle: // Weapon switch
             if w, ok := input.switch_to.?; ok && w != entity.active_weapon && w in entity.owned_weapons {
-                inst.pending_weapon = w
-                enter_state(inst, .Switching, def.switch_time)
+                wpn_inst.pending_weapon = w
+                enter_state(wpn_inst, .Switching, wpn_def.switch_time)
             } else if input.reload {
-                switch calc_reload_action(inst.ammo_in_clip, inst.ammo_reserve) {
-                case .DropClip: enter_clip_drop(inst, def)
-                case .InsertClip: enter_clip_insert(inst, def)
+                switch calc_reload_action(wpn_inst.ammo_in_clip, wpn_inst.ammo_reserve) {
+                case .DropClip: enter_clip_drop(wpn_inst, wpn_def)
+                case .InsertClip: enter_clip_insert(wpn_inst, wpn_def)
                 case .None:
                 }
             } else {
                 switch entity.active_weapon {
                 case .SMG, .Tesla, .Rifle:
                     wants_to_fire := input.fire_held if entity.active_weapon != .Rifle else input.fire_pressed
-                    if wants_to_fire && inst.ammo_in_clip > 0 {
-                        enter_state(inst, .Firing, def.fire_interval)
-                        inst.fire_on_firing_enter = entity.ballistic_fire_mode == .ImmediateCooldown
-                        inst.fire_queued = entity.ballistic_fire_mode == .WindupDelay
+                    if wants_to_fire && wpn_inst.ammo_in_clip > 0 {
+                        enter_state(wpn_inst, .Firing, wpn_def.fire_interval)
+                        wpn_inst.fire_on_firing_enter = entity.ballistic_fire_mode == .ImmediateCooldown
+                        wpn_inst.fire_queued = entity.ballistic_fire_mode == .WindupDelay
                         // Fire immediately on state entry without mutating timer semantics.
-                        process_ballistic_firing_state(entity, inst, def, muzzle_pos, aim_rad, input)
+                        process_ballistic_firing_state(entity, wpn_inst, wpn_def, muzzle_pos, aim_rad, input)
                     }
-                case .Cannon: if input.fire_held && inst.ammo_in_clip > 0 {
-                            enter_state(inst, .Charging, def.charge_time)
-                            rl.PlaySound(def.charge_sound)
-                            inst.charge_sfx_playing = true
+                case .Cannon: if input.fire_held && wpn_inst.ammo_in_clip > 0 {
+                            enter_state(wpn_inst, .Charging, wpn_def.charge_time)
+                            rl.PlaySound(wpn_def.charge_sound)
+                            wpn_inst.charge_sfx_playing = true
                         }
                 }
             }
 
-    case .Switching: if inst.state_timer >= inst.state_duration {
-                entity.active_weapon = inst.pending_weapon
-                enter_state(&entity.weapons[inst.pending_weapon], .Idle, 0)
+    case .Switching: if wpn_inst.state_timer >= wpn_inst.state_duration {
+                entity.active_weapon = wpn_inst.pending_weapon
+                enter_state(&entity.weapons[wpn_inst.pending_weapon], .Idle, 0)
             }
 
-    case .Firing: process_ballistic_firing_state(entity, inst, def, muzzle_pos, aim_rad, input)
+    case .Firing: process_ballistic_firing_state(entity, wpn_inst, wpn_def, muzzle_pos, aim_rad, input)
 
-    case .ClipDrop: if inst.state_timer >= inst.state_duration {
-                inst.ammo_in_clip = 0
-                if entity.auto_reload && inst.ammo_reserve > 0 {
-                    enter_clip_insert(inst, def)
+    case .ClipDrop: if wpn_inst.state_timer >= wpn_inst.state_duration {
+                wpn_inst.ammo_in_clip = 0
+                if entity.auto_reload && wpn_inst.ammo_reserve > 0 {
+                    enter_clip_insert(wpn_inst, wpn_def)
                 } else {
-                    enter_state(inst, .Idle, 0)
+                    enter_state(wpn_inst, .Idle, 0)
                 }
             }
 
     case .ClipInsert:
         // Perfect reload minigame: player-only
-        if is_player && !inst.reload_window_spent && input.reload {
-            inst.reload_window_spent = true
-            cursor := clamp(inst.state_timer / inst.state_duration, 0, 1)
-            if check_reload_window(cursor, inst.reload_window_start, inst.reload_window_end) {
-                inst.reload_perfect_this_insert = true
+        if is_player && !wpn_inst.reload_window_spent && input.reload {
+            wpn_inst.reload_window_spent = true
+            cursor := clamp(wpn_inst.state_timer / wpn_inst.state_duration, 0, 1)
+            if check_reload_window(cursor, wpn_inst.reload_window_start, wpn_inst.reload_window_end) {
+                wpn_inst.reload_perfect_this_insert = true
                 st.perfect_reload_fx_timer = max(st.perfect_reload_fx_timer, PerfectReloadFxSecs)
                 st.camera_shake = max(st.camera_shake, 18)
                 spawn_perfect_reload_fanfare(entity.pos)
                 rl.PlaySound(PerfectReloadSfx)
-                inst.state_timer = inst.state_duration
+                wpn_inst.state_timer = wpn_inst.state_duration
             }
         }
-        if inst.state_timer >= inst.state_duration {
-            inst.ammo_in_clip, inst.ammo_reserve = calc_clip_insert_ammo(def.clip_size, inst.ammo_reserve)
-            inst.perfect_reload_clip = inst.reload_perfect_this_insert
-            enter_state(inst, .Idle, 0)
+        if wpn_inst.state_timer >= wpn_inst.state_duration {
+            wpn_inst.ammo_in_clip, wpn_inst.ammo_reserve = calc_clip_insert_ammo(wpn_def.clip_size, wpn_inst.ammo_reserve)
+            wpn_inst.perfect_reload_clip = wpn_inst.reload_perfect_this_insert
+            enter_state(wpn_inst, .Idle, 0)
         }
 
     case .Charging: if input.fire_held {
-                charge_frac := inst.state_timer / inst.state_duration
+                charge_frac := wpn_inst.state_timer / wpn_inst.state_duration
                 shake := (7 + 22 * charge_frac) if is_player else 0
                 st.camera_shake = max(st.camera_shake, shake)
                 if is_player {
@@ -685,25 +685,25 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
                     }
                 }
             } else {
-                rl.StopSound(def.charge_sound)
-                inst.charge_sfx_playing = false
-                if inst.state_timer >= inst.state_duration {
-                    inst.beam_angle = entity.aim_angle
-                    inst.ammo_in_clip -= 1
-                    apply_kickback(entity, math.to_radians(inst.beam_angle), def.kickback_impulse)
-                    shake := def.shake_impulse if is_player else def.shake_impulse * 0.05
+                rl.StopSound(wpn_def.charge_sound)
+                wpn_inst.charge_sfx_playing = false
+                if wpn_inst.state_timer >= wpn_inst.state_duration {
+                    wpn_inst.beam_angle = entity.aim_angle
+                    wpn_inst.ammo_in_clip -= 1
+                    apply_kickback(entity, math.to_radians(wpn_inst.beam_angle), wpn_def.kickback_impulse)
+                    shake := wpn_def.shake_impulse if is_player else wpn_def.shake_impulse * 0.05
                     st.camera_shake = max(st.camera_shake, shake)
-                    rl.PlaySound(def.sound)
-                    enter_state(inst, .BeamActive, def.beam_duration)
+                    rl.PlaySound(wpn_def.sound)
+                    enter_state(wpn_inst, .BeamActive, wpn_def.beam_duration)
                 } else {
-                    enter_state(inst, .Idle, 0)
+                    enter_state(wpn_inst, .Idle, 0)
                 }
             }
 
     case .BeamActive:
         shake: f32 = 55 if is_player else 2
         st.camera_shake = max(st.camera_shake, shake)
-        beam_rad := math.to_radians(inst.beam_angle)
+        beam_rad := math.to_radians(wpn_inst.beam_angle)
         beam_dir := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
         beam_origin := entity.pos + beam_dir * (entity.radius + 15)
         friendly := entity.type == .Player
@@ -714,21 +714,21 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
             to_e := e.pos - beam_origin
             along := linalg.dot(to_e, beam_dir)
             if along < 0 {continue}
-            beam_hit_r := def.beam_half_width + e.radius
+            beam_hit_r := wpn_def.beam_half_width + e.radius
             if linalg.length2(to_e - beam_dir * along) < beam_hit_r * beam_hit_r {
-                e.health -= def.beam_damage * dt
+                e.health -= wpn_def.beam_damage * dt
                 e.hit_flash = max(e.hit_flash, 0.06)
                 if rl.GetRandomValue(0, 100) < 10 {
                     spawn_hit_sparks(e.pos, rl.YELLOW, 2)
                 }
             }
         }
-        if inst.state_timer >= inst.state_duration {
-            enter_state(inst, .Cooldown, def.cooldown_time)
+        if wpn_inst.state_timer >= wpn_inst.state_duration {
+            enter_state(wpn_inst, .Cooldown, wpn_def.cooldown_time)
         }
 
-    case .Cooldown: if inst.state_timer >= inst.state_duration {
-                enter_state(inst, .Idle, 0)
+    case .Cooldown: if wpn_inst.state_timer >= wpn_inst.state_duration {
+                enter_state(wpn_inst, .Idle, 0)
             }
     }
 
@@ -736,7 +736,7 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
     resolve_volitional_movement_lock(entity)
 
     // Decay muzzle flash (cosmetic, not state-gated)
-    if inst.muzzle_flash_timer > 0 {inst.muzzle_flash_timer = max(0, inst.muzzle_flash_timer - dt)}
+    if wpn_inst.muzzle_flash_timer > 0 {wpn_inst.muzzle_flash_timer = max(0, wpn_inst.muzzle_flash_timer - dt)}
 }
 
 // ── Gameplay Update ────────────────────────────────────────────────────────────
@@ -818,7 +818,7 @@ update_gameplay :: proc() {
         for i in 0 ..< len(st.entities) {
             e := &st.entities[i]
             if e.type != .Enemy {continue}
-            def := EnemyDB[e.enemy_type]
+            enemy_def := EnemyDB[e.enemy_type]
 
             to_player := st.player.pos - e.pos
             dist_sq := linalg.length2(to_player)
@@ -845,18 +845,18 @@ update_gameplay :: proc() {
             }
 
             steering: Vec2
-            ai_freeze := false
+            ai_move_locked := false
             use_air_friction := false
             enemy_input := WeaponInput{}
-            separation_term := separation * (def.separation_str / 120.0)
+            separation_term := separation * (enemy_def.separation_str / 120.0)
 
             switch e.enemy_type {
             case .Chaser:
                 e.ai_timer += dt
                 steering = dir_to_player + separation_term
-                in_range := dist_to_player < 400
-                enemy_input.fire_held = in_range
-                enemy_input.fire_pressed = in_range
+                within_engage_range := dist_to_player < 400
+                enemy_input.fire_held = within_engage_range
+                enemy_input.fire_pressed = within_engage_range
 
             case .Rusher:
                 steering = separation_term
@@ -870,9 +870,9 @@ update_gameplay :: proc() {
                     } else {
                         steering += dir_to_player * 0.25
                     }
-                    in_range := dist_to_player < 380
-                    enemy_input.fire_held = in_range
-                    enemy_input.fire_pressed = in_range
+                    within_engage_range := dist_to_player < 380
+                    enemy_input.fire_held = within_engage_range
+                    enemy_input.fire_pressed = within_engage_range
                     player_world_vel := st.player.move_vel + st.player.impulse_vel
                     closing_dot: f32
                     player_speed_sq := linalg.length2(player_world_vel)
@@ -888,10 +888,10 @@ update_gameplay :: proc() {
                         e.move_vel = {}
                     }
                 case .Charging:
-                    ai_freeze = true
+                    ai_move_locked = true
                     e.move_vel = {}
                     e.ai_timer += dt
-                    if e.ai_timer >= def.charge_telegraph {
+                    if e.ai_timer >= enemy_def.charge_telegraph {
                         e.ai_state = .Dashing
                         e.ai_timer = 0
                         lead_target := st.player.pos + (st.player.move_vel + st.player.impulse_vel) * 0.22
@@ -901,19 +901,19 @@ update_gameplay :: proc() {
                         if dash_len_sq > 0.0001 {
                             dash_dir = dash_vec / math.sqrt(dash_len_sq)
                         }
-                        e.impulse_vel = dash_dir * def.dash_speed
+                        e.impulse_vel = dash_dir * enemy_def.dash_speed
                     }
                 case .Dashing:
                     use_air_friction = true
                     e.ai_timer += dt
-                    if e.ai_timer >= def.dash_duration {
+                    if e.ai_timer >= enemy_def.dash_duration {
                         e.ai_state = .Cooldown
                         e.ai_timer = 0
                     }
                 case .Cooldown:
                     use_air_friction = true
                     e.ai_timer += dt
-                    if e.ai_timer >= def.dash_cooldown {
+                    if e.ai_timer >= enemy_def.dash_cooldown {
                         e.ai_state = .Idle
                         e.ai_timer = 0
                     }
@@ -921,7 +921,7 @@ update_gameplay :: proc() {
 
             case .Strafer:
                 e.ai_timer += dt
-                preferred := def.preferred_dist
+                preferred := enemy_def.preferred_dist
                 radial: Vec2
                 if dist_to_player > preferred + 50 {
                     radial = dir_to_player
@@ -930,10 +930,10 @@ update_gameplay :: proc() {
                 }
                 orbit_sign: f32 = 1 if e.id % 2 == 0 else -1
                 tangential := Vec2{-dir_to_player.y, dir_to_player.x} * orbit_sign
-                steering = radial + tangential * (def.strafe_speed / max(f32(1), def.move_speed)) + separation_term
-                in_range := dist_to_player < preferred + 150
-                enemy_input.fire_held = in_range
-                enemy_input.fire_pressed = in_range
+                steering = radial + tangential * (enemy_def.strafe_speed / max(f32(1), enemy_def.move_speed)) + separation_term
+                within_engage_range := dist_to_player < preferred + 150
+                enemy_input.fire_held = within_engage_range
+                enemy_input.fire_pressed = within_engage_range
 
                 if e.weapons[e.active_weapon].ammo_in_clip <= 0 {
                     tesla_has_any_ammo := e.weapons[.Tesla].ammo_in_clip > 0 || e.weapons[.Tesla].ammo_reserve > 0
@@ -952,7 +952,7 @@ update_gameplay :: proc() {
             }
 
             update_entity_weapons(e, enemy_input, dt)
-            e.ai_move_locked = ai_freeze
+            e.ai_move_locked = ai_move_locked
             resolve_volitional_movement_lock(e)
 
             if !e.cant_volitional_move && e.ai_state != .Dashing {
@@ -1083,22 +1083,22 @@ render_frame :: proc() {
         rl.DrawTexturePro(tex, src_rect, dest_rect, dest_size / 2, angle, tint)
     }
     draw_cannon_beam :: proc(beam_angle_deg: f32, beam_timer: f32) {
-        def := WeaponDB[.Cannon]
+        cannon_wpn_def := WeaponDB[.Cannon]
         beam_rad := math.to_radians(beam_angle_deg)
-        dir := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
+        beam_dir := Vec2{math.cos(beam_rad), math.sin(beam_rad)}
         perp := Vec2{-math.sin(beam_rad), math.cos(beam_rad)}
-        origin := st.player.pos + dir * (st.player.radius + 15)
-        beam_end := origin + dir * 3000
-        t := max(f32(0), 1 - beam_timer / def.beam_duration)
-        outer_alpha := f32(0.84) * t
-        ow := def.beam_half_width * 1.33
-        cw := def.beam_half_width * 0.53
-        oc := rl.Fade(rl.RAYWHITE, outer_alpha)
-        cc := rl.Fade(rl.YELLOW, outer_alpha * 0.7)
-        rl.DrawTriangle(origin + perp * ow, beam_end + perp * ow, beam_end - perp * ow, oc)
-        rl.DrawTriangle(beam_end - perp * ow, origin - perp * ow, origin + perp * ow, oc)
-        rl.DrawTriangle(origin + perp * cw, beam_end + perp * cw, beam_end - perp * cw, cc)
-        rl.DrawTriangle(beam_end - perp * cw, origin - perp * cw, origin + perp * cw, cc)
+        origin := st.player.pos + beam_dir * (st.player.radius + 15)
+        beam_end := origin + beam_dir * 3000
+        beam_fade := max(f32(0), 1 - beam_timer / cannon_wpn_def.beam_duration)
+        outer_alpha := f32(0.84) * beam_fade
+        outer_half_width := cannon_wpn_def.beam_half_width * 1.33
+        core_half_width := cannon_wpn_def.beam_half_width * 0.53
+        outer_color := rl.Fade(rl.RAYWHITE, outer_alpha)
+        core_color := rl.Fade(rl.YELLOW, outer_alpha * 0.7)
+        rl.DrawTriangle(origin + perp * outer_half_width, beam_end + perp * outer_half_width, beam_end - perp * outer_half_width, outer_color)
+        rl.DrawTriangle(beam_end - perp * outer_half_width, origin - perp * outer_half_width, origin + perp * outer_half_width, outer_color)
+        rl.DrawTriangle(origin + perp * core_half_width, beam_end + perp * core_half_width, beam_end - perp * core_half_width, core_color)
+        rl.DrawTriangle(beam_end - perp * core_half_width, origin - perp * core_half_width, origin + perp * core_half_width, core_color)
     }
 
     rl.BeginDrawing()
@@ -1231,18 +1231,18 @@ render_frame :: proc() {
     }
 
     // Active weapon data used by muzzle flash and HUD
-    active_def := WeaponDB[st.player.active_weapon]
-    active_inst := st.player.weapons[st.player.active_weapon]
+    active_wpn_def := WeaponDB[st.player.active_weapon]
+    active_wpn_inst := st.player.weapons[st.player.active_weapon]
 
     // Muzzle flash (standard) or Tesla arc
-    if active_inst.muzzle_flash_timer > 0 && active_def.flash_duration > 0 {
-        t := active_inst.muzzle_flash_timer / active_def.flash_duration
+    if active_wpn_inst.muzzle_flash_timer > 0 && active_wpn_def.flash_duration > 0 {
+        t := active_wpn_inst.muzzle_flash_timer / active_wpn_def.flash_duration
         perp := Vec2{-math.sin(render_aim_rad), math.cos(render_aim_rad)}
-        if active_def.flash_size > 0 {
-            flen := active_def.flash_size * (0.5 + t * 0.5)
-            fwid := active_def.flash_size * 0.4 * t
+        if active_wpn_def.flash_size > 0 {
+            flen := active_wpn_def.flash_size * (0.5 + t * 0.5)
+            fwid := active_wpn_def.flash_size * 0.4 * t
             tip := render_muzzle + render_aim_dir * flen
-            rl.DrawTriangle(render_muzzle + perp * fwid, tip, render_muzzle - perp * fwid, rl.Fade(active_def.bullet_color, t))
+            rl.DrawTriangle(render_muzzle + perp * fwid, tip, render_muzzle - perp * fwid, rl.Fade(active_wpn_def.bullet_color, t))
             rl.DrawCircleV(render_muzzle + render_aim_dir * (flen * 0.75), fwid * 0.22, rl.Fade(rl.RAYWHITE, t * 0.65))
         } else {
             // Tesla arc: 5 jagged segments
@@ -1282,14 +1282,14 @@ render_frame :: proc() {
         st.player.auto_reload,
         fire_mode_label,
     )
-    switch active_inst.state {
+    switch active_wpn_inst.state {
     case .Switching: draw_text({10, 50}, 20, "SWITCHING...")
-    case .ClipDrop: draw_text({10, 50}, 20, "%v: DROPPING CLIP...", active_def.name)
-    case .ClipInsert: draw_text({10, 50}, 20, "%v: RELOADING...", active_def.name)
-    case .Idle, .Firing, .Charging, .BeamActive, .Cooldown: draw_text({10, 50}, 20, "%v: %d / %d", active_def.name, active_inst.ammo_in_clip, active_inst.ammo_reserve)
+    case .ClipDrop: draw_text({10, 50}, 20, "%v: DROPPING CLIP...", active_wpn_def.name)
+    case .ClipInsert: draw_text({10, 50}, 20, "%v: RELOADING...", active_wpn_def.name)
+    case .Idle, .Firing, .Charging, .BeamActive, .Cooldown: draw_text({10, 50}, 20, "%v: %d / %d", active_wpn_def.name, active_wpn_inst.ammo_in_clip, active_wpn_inst.ammo_reserve)
     }
-    draw_text({10, 70}, 18, "PERFECT CLIP %v", active_inst.perfect_reload_clip)
-    if active_inst.state == .ClipInsert {
+    draw_text({10, 70}, 18, "PERFECT CLIP %v", active_wpn_inst.perfect_reload_clip)
+    if active_wpn_inst.state == .ClipInsert {
         draw_text({10, 90}, 18, "RELOAD MINIGAME: press R in highlighted window")
     }
 
@@ -1298,30 +1298,30 @@ render_frame :: proc() {
     bar_frac: f32
     bar_color: rl.Color
     bar_label: string
-    switch active_inst.state {
+    switch active_wpn_inst.state {
     case .Switching:
         show_bar = true
-        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_wpn_inst.state_timer / active_wpn_inst.state_duration, 0, 1)
         bar_color = rl.ORANGE
         bar_label = "SWITCHING"
     case .ClipDrop:
         show_bar = true
-        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_wpn_inst.state_timer / active_wpn_inst.state_duration, 0, 1)
         bar_color = rl.ORANGE
         bar_label = "DROPPING CLIP"
     case .ClipInsert:
         show_bar = true
-        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_wpn_inst.state_timer / active_wpn_inst.state_duration, 0, 1)
         bar_color = rl.SKYBLUE
         bar_label = "RELOADING"
     case .Charging:
         show_bar = true
-        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_wpn_inst.state_timer / active_wpn_inst.state_duration, 0, 1)
         bar_color = rl.YELLOW if bar_frac >= 1 else rl.SKYBLUE
         bar_label = "MAXIMUM CHARGE!" if bar_frac >= 1 else "CHARGING..."
     case .Cooldown:
         show_bar = true
-        bar_frac = 1 - clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
+        bar_frac = 1 - clamp(active_wpn_inst.state_timer / active_wpn_inst.state_duration, 0, 1)
         bar_color = rl.YELLOW
         bar_label = "COOLDOWN"
     case .Idle, .Firing, .BeamActive:
@@ -1333,11 +1333,11 @@ render_frame :: proc() {
         cy := st.render_size.y - 60
         rl.DrawRectangle(i32(cx), i32(cy), i32(barw), i32(barh), rl.DARKGRAY)
         rl.DrawRectangle(i32(cx), i32(cy), i32(barw * bar_frac), i32(barh), bar_color)
-        if active_inst.state == .ClipInsert {
-            zone_x := cx + barw * clamp(active_inst.reload_window_start, 0, 1)
-            zone_w := barw * clamp(active_inst.reload_window_end - active_inst.reload_window_start, 0, 1)
+        if active_wpn_inst.state == .ClipInsert {
+            zone_x := cx + barw * clamp(active_wpn_inst.reload_window_start, 0, 1)
+            zone_w := barw * clamp(active_wpn_inst.reload_window_end - active_wpn_inst.reload_window_start, 0, 1)
             rl.DrawRectangle(i32(zone_x), i32(cy), i32(zone_w), i32(barh), rl.Fade(rl.GREEN, 0.45))
-            cursor_x := cx + barw * clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
+            cursor_x := cx + barw * clamp(active_wpn_inst.state_timer / active_wpn_inst.state_duration, 0, 1)
             rl.DrawLineEx({cursor_x, cy - 4}, {cursor_x, cy + barh + 4}, 2, rl.RAYWHITE)
         }
         rl.DrawRectangleLines(i32(cx), i32(cy), i32(barw), i32(barh), rl.RAYWHITE)
