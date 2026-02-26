@@ -102,21 +102,30 @@ WeaponInput :: struct {
     reload:       bool, // R pressed
     switch_to:    Maybe(WeaponType),
 }
-EnemyDef :: struct {
-    move_speed:       f32,
-    move_accel:       f32,
-    health:           f32,
-    contact_damage:   f32,
-    radius:           f32,
-    tint:             rl.Color,
-    separation_str:   f32,
-    starting_weapons: []WeaponType,
-    charge_telegraph: f32,
-    dash_speed:       f32,
-    dash_duration:    f32,
-    dash_cooldown:    f32,
-    preferred_dist:   f32,
-    strafe_speed:     f32,
+EntityDef :: struct {
+    type:                   EntityType,
+    enemy_type:             EnemyType, // used when `type == .Enemy`
+    radius:                 f32,
+    move_speed:             f32,
+    move_accel:             f32,
+    health:                 f32,
+    contact_damage:         f32,
+    tint:                   rl.Color, // used when `type == .Enemy`
+    separation_str:         f32,
+    auto_reload:            bool,
+    ballistic_fire_mode:    BallisticFireMode,
+    starting_active_weapon: WeaponType,
+    starting_weapons:       bit_set[WeaponType],
+    charge_telegraph:       f32,
+    dash_speed:             f32,
+    dash_duration:          f32,
+    dash_cooldown:          f32,
+    preferred_dist:         f32,
+    strafe_speed:           f32,
+}
+EnemySpawnBatch :: struct {
+    enemy_type: EnemyType,
+    count:      int,
 }
 WeaponDef :: struct {
     name:              string,
@@ -511,74 +520,50 @@ init_assets :: proc() {
     PerfectReloadSfx = rl.LoadSound(strings.clone_to_cstring(PerfectReloadSfxPath, context.temp_allocator))
 }
 
+new_entity_from_def :: proc(id: int, def: EntityDef) -> Entity {
+    e := Entity {
+        id                  = id,
+        type                = def.type,
+        enemy_type          = def.enemy_type,
+        radius              = def.radius,
+        move_speed          = def.move_speed,
+        move_accel          = def.move_accel,
+        health              = def.health,
+        max_health          = def.health,
+        damage              = def.contact_damage,
+        active_weapon       = def.starting_active_weapon,
+        owned_weapons       = def.starting_weapons,
+        auto_reload         = def.auto_reload,
+        ballistic_fire_mode = def.ballistic_fire_mode,
+    }
+    for w in WeaponType {
+        if w not_in def.starting_weapons {continue}
+        wdef := WeaponDB[w]
+        e.weapons[w] = WeaponInstance {
+            ammo_in_clip = wdef.clip_size,
+            ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
+        }
+    }
+    return e
+}
+
+spawn_entity :: proc(def: EntityDef, pos: Vec2 = {}) {
+    e := new_entity_from_def(len(st.entities), def)
+    e.pos = pos
+    append(&st.entities, e)
+}
+
+random_enemy_spawn_pos :: proc() -> Vec2 {
+    return Vec2{f32(rl.GetRandomValue(-900, 900)), f32(rl.GetRandomValue(-500, 500))}
+}
+
 init_game_state :: proc() {
-    player := Entity {
-        id                  = len(st.entities),
-        type                = .Player,
-        radius              = 50,
-        move_speed          = 700,
-        move_accel          = 1.0,
-        health              = 100,
-        max_health          = 100,
-        ballistic_fire_mode = .ImmediateCooldown,
-        owned_weapons       = {.SMG, .Rifle, .Tesla, .Cannon},
-    }
-    player.weapons[.SMG] = WeaponInstance {
-        ammo_in_clip = 30,
-        ammo_reserve = 150,
-    }
-    player.weapons[.Rifle] = WeaponInstance {
-        ammo_in_clip = 10,
-        ammo_reserve = 50,
-    }
-    player.weapons[.Tesla] = WeaponInstance {
-        ammo_in_clip = 20,
-        ammo_reserve = 80,
-    }
-    player.weapons[.Cannon] = WeaponInstance {
-        ammo_in_clip = 3,
-        ammo_reserve = 6,
-    }
-    append(&st.entities, player)
-    append(&st.entities, Entity{id = len(st.entities), type = .Crosshair, radius = 20})
-    spawn_batches := [3]struct {
-        enemy_type: EnemyType,
-        count:      int,
-    }{{enemy_type = .Chaser, count = 5}, {enemy_type = .Rusher, count = 3}, {enemy_type = .Strafer, count = 2}}
-    for batch in spawn_batches {
+    spawn_entity(PlayerDB)
+    spawn_entity(CrosshairDB)
+    for batch in EnemySpawnPlan {
         def := EnemyDB[batch.enemy_type]
         for _ in 0 ..< batch.count {
-            pos := Vec2{f32(rl.GetRandomValue(-900, 900)), f32(rl.GetRandomValue(-500, 500))}
-            enemy := Entity {
-                id                  = len(st.entities),
-                type                = .Enemy,
-                pos                 = pos,
-                enemy_type          = batch.enemy_type,
-                ai_state            = .Idle,
-                radius              = def.radius,
-                move_speed          = def.move_speed,
-                move_accel          = def.move_accel,
-                health              = def.health,
-                max_health          = def.health,
-                damage              = def.contact_damage,
-                auto_reload         = true,
-                ballistic_fire_mode = .ImmediateCooldown,
-            }
-            switch batch.enemy_type {
-            case .Chaser, .Rusher: enemy.owned_weapons = {.SMG}
-            case .Strafer: enemy.owned_weapons = {.Rifle, .Tesla}
-            }
-            for w in def.starting_weapons {
-                wdef := WeaponDB[w]
-                enemy.weapons[w] = WeaponInstance {
-                    ammo_in_clip = wdef.clip_size,
-                    ammo_reserve = max(0, wdef.max_ammo - wdef.clip_size),
-                }
-            }
-            if len(def.starting_weapons) > 0 {
-                enemy.active_weapon = def.starting_weapons[0]
-            }
-            append(&st.entities, enemy)
+            spawn_entity(def, random_enemy_spawn_pos())
         }
     }
 }
@@ -681,9 +666,40 @@ WeaponDB := [WeaponType]WeaponDef {
         clip_insert_time  = 1.6,
     },
 }
-EnemyDB := [EnemyType]EnemyDef {
-    .Chaser = EnemyDef{move_speed = 120, move_accel = 1.2, health = 50, contact_damage = 10, radius = 50, tint = rl.RED, separation_str = 120, starting_weapons = {.SMG}},
-    .Rusher = EnemyDef {
+PlayerDB := EntityDef {
+    type                   = .Player,
+    radius                 = 50,
+    move_speed             = 700,
+    move_accel             = 1.0,
+    health                 = 100,
+    ballistic_fire_mode    = .ImmediateCooldown,
+    auto_reload            = false,
+    starting_active_weapon = .SMG,
+    starting_weapons       = {.SMG, .Rifle, .Tesla, .Cannon},
+}
+CrosshairDB := EntityDef {
+    type   = .Crosshair,
+    radius = 20,
+}
+EnemyDB := [EnemyType]EntityDef {
+    .Chaser = EntityDef {
+        type = .Enemy,
+        enemy_type = .Chaser,
+        move_speed = 120,
+        move_accel = 1.2,
+        health = 50,
+        contact_damage = 10,
+        radius = 50,
+        tint = rl.RED,
+        separation_str = 120,
+        auto_reload = true,
+        ballistic_fire_mode = .ImmediateCooldown,
+        starting_active_weapon = .SMG,
+        starting_weapons = {.SMG},
+    },
+    .Rusher = EntityDef {
+        type = .Enemy,
+        enemy_type = .Rusher,
         move_speed = 80,
         move_accel = 1.1,
         health = 30,
@@ -691,13 +707,18 @@ EnemyDB := [EnemyType]EnemyDef {
         radius = 50,
         tint = rl.ORANGE,
         separation_str = 100,
+        auto_reload = true,
+        ballistic_fire_mode = .ImmediateCooldown,
+        starting_active_weapon = .SMG,
         starting_weapons = {.SMG},
         charge_telegraph = 0.6,
         dash_speed = 560,
         dash_duration = 0.30,
         dash_cooldown = 1.1,
     },
-    .Strafer = EnemyDef {
+    .Strafer = EntityDef {
+        type = .Enemy,
+        enemy_type = .Strafer,
         move_speed = 95,
         move_accel = 1.2,
         health = 35,
@@ -705,11 +726,15 @@ EnemyDB := [EnemyType]EnemyDef {
         radius = 50,
         tint = rl.PURPLE,
         separation_str = 110,
+        auto_reload = true,
+        ballistic_fire_mode = .ImmediateCooldown,
+        starting_active_weapon = .Rifle,
         starting_weapons = {.Rifle, .Tesla},
         preferred_dist = 350,
         strafe_speed = 100,
     },
 }
+EnemySpawnPlan := [3]EnemySpawnBatch{EnemySpawnBatch{enemy_type = .Chaser, count = 5}, EnemySpawnBatch{enemy_type = .Rusher, count = 3}, EnemySpawnBatch{enemy_type = .Strafer, count = 2}}
 st := GameState {
     camera = rl.Camera2D{zoom = 1.0},
     flip_by_aim = true,
@@ -1068,7 +1093,7 @@ render_frame :: proc() {
         viz := VizDB[e.type]
         pos := e.pos
         scale := viz.tex_scale * e.radius
-        enemy_def := EnemyDef{}
+        enemy_def := EntityDef{}
         if e.type == .Enemy {
             enemy_def = EnemyDB[e.enemy_type]
             scale = viz.tex_scale * enemy_def.radius

@@ -30,6 +30,9 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Removed redundant explicit `ai_state = .Idle` spawn assignment; entity zero-init already defaults enemy AI state to `Idle`.
+- [x] Simplified `init_game_state` with shared spawn helpers (`spawn_entity`, `random_enemy_spawn_pos`) and a data-driven `EnemySpawnPlan`.
+- [x] Unified player/enemy/crosshair startup data under shared `EntityDef`-based DB entries and removed init-time hardcoded loadout/ammo wiring.
 - [x] Standardized gameplay timing to one `dt := GetFrameTime()` read per update step (frame-ms timing remains separate for debug overlay).
 - [x] Unified enemy radii across archetypes so differentiation is driven by tint/behavior instead of size differences.
 - [x] Reworked movement into separate volitional and impulse velocity channels, so kickback/explosions/dashes are no longer constrained by normal movement speed caps.
