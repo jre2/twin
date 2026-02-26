@@ -109,7 +109,7 @@ EntityDef :: struct {
     auto_reload:            bool,
     ballistic_fire_mode:    BallisticFireMode,
     starting_active_weapon: WeaponType,
-    starting_weapons:       bit_set[WeaponType],
+    starting_weapons:       bit_set[WeaponType], // spawn-only ownership seed
     charge_telegraph:       f32,
     dash_speed:             f32,
     dash_duration:          f32,
@@ -187,7 +187,7 @@ Entity :: struct {
     weapons:              [WeaponType]WeaponInstance,
     ballistic_fire_mode:  BallisticFireMode,
     auto_reload:          bool,
-    owned_weapons:        bit_set[WeaponType],
+    owned_weapons:        bit_set[WeaponType], // runtime ownership source-of-truth
     // Enemy AI
     enemy_type:           EnemyType,
     ai_state:             EnemyAIState,
@@ -415,7 +415,7 @@ init_game_state :: proc() {
             ballistic_fire_mode = def.ballistic_fire_mode,
         }
         for w in WeaponType {
-            if w not_in def.starting_weapons {continue}
+            if w not_in e.owned_weapons {continue}
             wdef := WeaponDB[w]
             e.weapons[w] = WeaponInstance {
                 ammo_in_clip = wdef.clip_size,
@@ -937,9 +937,11 @@ update_gameplay :: proc() {
 
                 cur_inst := e.weapons[e.active_weapon]
                 if cur_inst.ammo_in_clip <= 0 {
-                    if e.active_weapon == .Rifle && .Tesla in e.owned_weapons {
+                    tesla_has_any_ammo := e.weapons[.Tesla].ammo_in_clip > 0 || e.weapons[.Tesla].ammo_reserve > 0
+                    rifle_has_any_ammo := e.weapons[.Rifle].ammo_in_clip > 0 || e.weapons[.Rifle].ammo_reserve > 0
+                    if e.active_weapon == .Rifle && .Tesla in e.owned_weapons && tesla_has_any_ammo {
                         enemy_input.switch_to = .Tesla
-                    } else if e.active_weapon == .Tesla && .Rifle in e.owned_weapons {
+                    } else if e.active_weapon == .Tesla && .Rifle in e.owned_weapons && rifle_has_any_ammo {
                         enemy_input.switch_to = .Rifle
                     }
                 }

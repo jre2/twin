@@ -3,7 +3,6 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Consolidate weapon ownership semantics: `starting_weapons` as spawn-only data, `owned_weapons` as runtime source-of-truth, with shared ownership helpers and one explicit empty-weapon rule (including Strafer fallback behavior).
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 - [ ] Review enemy sounds and whether toggles like `auto_reload`/fire mode should live per-entity or in global game state.
 - [ ] Tune new enemy archetype balance (Chaser/Rusher/Strafer movement constants, fire ranges, and starting weapon mix/pacing) after playtesting.
@@ -23,6 +22,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 
 ## Later
 - [ ] Expand test coverage beyond FSM regressions (ammo economy, wave scaling math, and collision edge cases).
+- [ ] Add startup DB validation checks (example: every `starting_active_weapon` must be present in that definition's `starting_weapons`) so data mistakes fail fast.
 - [ ] Replace temporary enemy art link (`res/enemy.png -> char2.png`) with final art asset pipeline.
 - [ ] Revisit weapon FSM structure to reduce `Idle`/`Firing` coupling while preserving no-frame-delay first shot behavior.
 - [ ] Super-low-priority runtime data audit: look for ways to reduce/simplify per-instance memory (for example, whether `fire_on_firing_enter` and `fire_queued` can be represented more compactly without hurting clarity).
@@ -31,6 +31,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Consolidated weapon ownership semantics: `starting_weapons` remains spawn-only seed data, `owned_weapons` is runtime source-of-truth, and empty-weapon handling is explicit (owned stays switchable; ammo gates firing and Strafer tactical fallback).
 - [x] Cleaned up ballistic firing FSM by replacing the `state_timer = state_duration` shortcut with explicit fire-on-entry intent in `.Firing`.
 - [x] Unified movement-lock authority with explicit lock sources (`weapon_move_locked`, `ai_move_locked`) and one derived `cant_volitional_move`.
 - [x] Reordered runtime instance types so `WeaponInput` sits with per-entity/per-frame runtime types and `GameState` remains the final aggregate singleton.
