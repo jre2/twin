@@ -463,8 +463,8 @@ draw_text :: proc(pos: Vec2, size: f32, fmtstring: string, args: ..any) {
 }
 
 update_weapon_move_lock :: proc(entity: ^Entity) {
-    inst := entity.weapons[entity.active_weapon]
-    entity.weapon_move_locked = inst.state != .Idle && inst.state != .Cooldown
+    state := entity.weapons[entity.active_weapon].state
+    entity.weapon_move_locked = state != .Idle && state != .Cooldown
 }
 
 resolve_volitional_movement_lock :: proc(entity: ^Entity) {
@@ -935,8 +935,7 @@ update_gameplay :: proc() {
                 enemy_input.fire_held = in_range
                 enemy_input.fire_pressed = in_range
 
-                cur_inst := e.weapons[e.active_weapon]
-                if cur_inst.ammo_in_clip <= 0 {
+                if e.weapons[e.active_weapon].ammo_in_clip <= 0 {
                     tesla_has_any_ammo := e.weapons[.Tesla].ammo_in_clip > 0 || e.weapons[.Tesla].ammo_reserve > 0
                     rifle_has_any_ammo := e.weapons[.Rifle].ammo_in_clip > 0 || e.weapons[.Rifle].ammo_reserve > 0
                     if e.active_weapon == .Rifle && .Tesla in e.owned_weapons && tesla_has_any_ammo {
@@ -1231,17 +1230,19 @@ render_frame :: proc() {
         draw_cannon_beam(cannon_inst.beam_angle, cannon_inst.state_timer)
     }
 
+    // Active weapon data used by muzzle flash and HUD
+    active_def := WeaponDB[st.player.active_weapon]
+    active_inst := st.player.weapons[st.player.active_weapon]
+
     // Muzzle flash (standard) or Tesla arc
-    cur_inst := st.player.weapons[st.player.active_weapon]
-    cur_def := WeaponDB[st.player.active_weapon]
-    if cur_inst.muzzle_flash_timer > 0 && cur_def.flash_duration > 0 {
-        t := cur_inst.muzzle_flash_timer / cur_def.flash_duration
+    if active_inst.muzzle_flash_timer > 0 && active_def.flash_duration > 0 {
+        t := active_inst.muzzle_flash_timer / active_def.flash_duration
         perp := Vec2{-math.sin(render_aim_rad), math.cos(render_aim_rad)}
-        if cur_def.flash_size > 0 {
-            flen := cur_def.flash_size * (0.5 + t * 0.5)
-            fwid := cur_def.flash_size * 0.4 * t
+        if active_def.flash_size > 0 {
+            flen := active_def.flash_size * (0.5 + t * 0.5)
+            fwid := active_def.flash_size * 0.4 * t
             tip := render_muzzle + render_aim_dir * flen
-            rl.DrawTriangle(render_muzzle + perp * fwid, tip, render_muzzle - perp * fwid, rl.Fade(cur_def.bullet_color, t))
+            rl.DrawTriangle(render_muzzle + perp * fwid, tip, render_muzzle - perp * fwid, rl.Fade(active_def.bullet_color, t))
             rl.DrawCircleV(render_muzzle + render_aim_dir * (flen * 0.75), fwid * 0.22, rl.Fade(rl.RAYWHITE, t * 0.65))
         } else {
             // Tesla arc: 5 jagged segments
@@ -1270,8 +1271,6 @@ render_frame :: proc() {
     }
 
     // HUD
-    hud_def := WeaponDB[st.player.active_weapon]
-    hud_inst := st.player.weapons[st.player.active_weapon]
     fire_mode_label := "COOLDOWN" if st.player.ballistic_fire_mode == .ImmediateCooldown else "WINDUP"
     draw_text({10, 10}, 20, "FPS %d | HP %.0f", rl.GetFPS(), st.player.health)
     draw_text(
@@ -1283,14 +1282,14 @@ render_frame :: proc() {
         st.player.auto_reload,
         fire_mode_label,
     )
-    switch hud_inst.state {
+    switch active_inst.state {
     case .Switching: draw_text({10, 50}, 20, "SWITCHING...")
-    case .ClipDrop: draw_text({10, 50}, 20, "%v: DROPPING CLIP...", hud_def.name)
-    case .ClipInsert: draw_text({10, 50}, 20, "%v: RELOADING...", hud_def.name)
-    case .Idle, .Firing, .Charging, .BeamActive, .Cooldown: draw_text({10, 50}, 20, "%v: %d / %d", hud_def.name, hud_inst.ammo_in_clip, hud_inst.ammo_reserve)
+    case .ClipDrop: draw_text({10, 50}, 20, "%v: DROPPING CLIP...", active_def.name)
+    case .ClipInsert: draw_text({10, 50}, 20, "%v: RELOADING...", active_def.name)
+    case .Idle, .Firing, .Charging, .BeamActive, .Cooldown: draw_text({10, 50}, 20, "%v: %d / %d", active_def.name, active_inst.ammo_in_clip, active_inst.ammo_reserve)
     }
-    draw_text({10, 70}, 18, "PERFECT CLIP %v", hud_inst.perfect_reload_clip)
-    if hud_inst.state == .ClipInsert {
+    draw_text({10, 70}, 18, "PERFECT CLIP %v", active_inst.perfect_reload_clip)
+    if active_inst.state == .ClipInsert {
         draw_text({10, 90}, 18, "RELOAD MINIGAME: press R in highlighted window")
     }
 
@@ -1299,30 +1298,30 @@ render_frame :: proc() {
     bar_frac: f32
     bar_color: rl.Color
     bar_label: string
-    switch hud_inst.state {
+    switch active_inst.state {
     case .Switching:
         show_bar = true
-        bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
         bar_color = rl.ORANGE
         bar_label = "SWITCHING"
     case .ClipDrop:
         show_bar = true
-        bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
         bar_color = rl.ORANGE
         bar_label = "DROPPING CLIP"
     case .ClipInsert:
         show_bar = true
-        bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
         bar_color = rl.SKYBLUE
         bar_label = "RELOADING"
     case .Charging:
         show_bar = true
-        bar_frac = clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+        bar_frac = clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
         bar_color = rl.YELLOW if bar_frac >= 1 else rl.SKYBLUE
         bar_label = "MAXIMUM CHARGE!" if bar_frac >= 1 else "CHARGING..."
     case .Cooldown:
         show_bar = true
-        bar_frac = 1 - clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+        bar_frac = 1 - clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
         bar_color = rl.YELLOW
         bar_label = "COOLDOWN"
     case .Idle, .Firing, .BeamActive:
@@ -1334,11 +1333,11 @@ render_frame :: proc() {
         cy := st.render_size.y - 60
         rl.DrawRectangle(i32(cx), i32(cy), i32(barw), i32(barh), rl.DARKGRAY)
         rl.DrawRectangle(i32(cx), i32(cy), i32(barw * bar_frac), i32(barh), bar_color)
-        if hud_inst.state == .ClipInsert {
-            zone_x := cx + barw * clamp(hud_inst.reload_window_start, 0, 1)
-            zone_w := barw * clamp(hud_inst.reload_window_end - hud_inst.reload_window_start, 0, 1)
+        if active_inst.state == .ClipInsert {
+            zone_x := cx + barw * clamp(active_inst.reload_window_start, 0, 1)
+            zone_w := barw * clamp(active_inst.reload_window_end - active_inst.reload_window_start, 0, 1)
             rl.DrawRectangle(i32(zone_x), i32(cy), i32(zone_w), i32(barh), rl.Fade(rl.GREEN, 0.45))
-            cursor_x := cx + barw * clamp(hud_inst.state_timer / hud_inst.state_duration, 0, 1)
+            cursor_x := cx + barw * clamp(active_inst.state_timer / active_inst.state_duration, 0, 1)
             rl.DrawLineEx({cursor_x, cy - 4}, {cursor_x, cy + barh + 4}, 2, rl.RAYWHITE)
         }
         rl.DrawRectangleLines(i32(cx), i32(cy), i32(barw), i32(barh), rl.RAYWHITE)
