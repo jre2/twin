@@ -3,9 +3,12 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Add baseline enemy AI: chase player, keep spacing, and apply simple steering to avoid clumping.
-- [ ] Enemy movement variety (ranged strafers, melee rushers) once baseline chase AI exists.
+- [ ] Rework movement model to separate volitional movement speed from non-volitional impulses (kickback/explosions/dash), and remove ambiguous `max_vel` behavior.
+- [ ] Fix rusher dash so burst speed is preserved during `Dashing` (not clamped to normal movement speed).
+- [ ] Resolve weapon ownership model (`available_weapons` vs implied-by-ammo/loadout) and implement one consistent rule.
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
+- [ ] Review enemy sounds and whether toggles like `auto_reload`/fire mode should live per-entity or in global game state.
+- [ ] Tune new enemy archetype balance (Chaser/Rusher/Strafer movement constants, fire ranges, and loadout pacing) after playtesting.
 
 ## Next
 - [ ] Add game flow states (`Playing`, `Dead`, `Restarting`) instead of running until window close only.
@@ -15,7 +18,6 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Empty-clip auto-reload: when firing empties the clip, auto-chain into `ClipDrop` → `ClipInsert`.
 - [ ] Implement a real gameplay effect for `perfect_reload_clip` (currently HUD/state only).
 - [ ] Finalize the unified damage/collision/cleanup section so particle and entity damage rules stay co-located and evolve together.
-- [ ] Prevent enemy-vs-enemy collision damage; keep friendly fire enabled for enemy-fired projectiles.
 - [ ] Add pickup/ammo economy hooks to support longer runs.
 - [ ] Add a simple pause/settings screen (audio sliders, controls legend, restart button), including controls for toggles like debug overlay and fire mode.
 - [ ] Full loop-style pass across the codebase; make loops more idiomatic Odin (`for x in xs` where feasible, cleaner index loops where mutation/removal requires indices).
@@ -29,6 +31,9 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Implemented baseline enemy AI with steering/separation, shared weapon FSM usage, and data-driven EnemyDB spawning.
+- [x] Added enemy movement variety: Chaser pursuit, Rusher charge/dash FSM, and Strafer orbit/range behavior with weapon switching.
+- [x] Prevented enemy-vs-enemy contact damage while keeping enemy projectile friendly fire vs player.
 - [x] Added regression tests for weapon/reload FSM: extracted `calc_reload_action`, `calc_clip_insert_ammo`, `check_reload_window` as testable procs with 12 tests covering state entry, ammo math, reload decisions, and perfect reload window.
 - [x] Added lightweight debug/profiling overlay (entity/enemy/particle counts + frame/update/render ms) with `U` toggle.
 - [x] Collision checks now use `linalg.length2` squared-distance comparisons (no sqrt in hot paths).
