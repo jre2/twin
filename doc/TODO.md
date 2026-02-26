@@ -3,8 +3,8 @@
 Prioritized backlog for the current combat prototype. Keep this file focused on concrete, shippable tasks.
 
 ## Now
-- [ ] Resolve weapon ownership source-of-truth (`starting_weapons` vs `owned_weapons`) and remove redundant ownership checks from weapon switch/fire logic.
-- [ ] Define and enforce one ownership rule for empty weapons (owned-but-empty vs unavailable), including Strafer rifle/tesla fallback behavior.
+- [ ] Clean up ballistic firing FSM to remove the `state_timer = state_duration` immediate-shot shortcut and use explicit fire-on-entry intent in `.Firing`.
+- [ ] Consolidate weapon ownership semantics: `starting_weapons` as spawn-only data, `owned_weapons` as runtime source-of-truth, with shared ownership helpers and one explicit empty-weapon rule (including Strafer fallback behavior).
 - [ ] Implement wave spawning and scaling (enemy count, speed, health, contact damage).
 - [ ] Review enemy sounds and whether toggles like `auto_reload`/fire mode should live per-entity or in global game state.
 - [ ] Tune new enemy archetype balance (Chaser/Rusher/Strafer movement constants, fire ranges, and starting weapon mix/pacing) after playtesting.
@@ -31,6 +31,7 @@ Prioritized backlog for the current combat prototype. Keep this file focused on 
 - [ ] Entity pooling / free-list for enemies to avoid allocation churn at higher enemy counts.
 
 ## Recently Completed
+- [x] Unified movement-lock authority with explicit lock sources (`weapon_move_locked`, `ai_move_locked`) and one derived `cant_volitional_move`.
 - [x] Reordered runtime instance types so `WeaponInput` sits with per-entity/per-frame runtime types and `GameState` remains the final aggregate singleton.
 - [x] Refined internal declaration order so related enums/types are adjacent (entity + enemy enums together, weapon state + reload action together) and structs are split by template-vs-runtime role.
 - [x] Tightened internal section ordering in `src/main.odin` (dependency-first within types/data/globals and lifecycle call-order alignment).

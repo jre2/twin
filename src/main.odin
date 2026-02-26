@@ -178,7 +178,9 @@ Entity :: struct {
     max_health:           f32,
     damage:               f32, // contact damage per second
     hit_flash:            f32, // seconds remaining for damage feedback
-    cant_volitional_move: bool, // whether entity can move of their own volition; momentum and knockback are not affected
+    weapon_move_locked:   bool, // derived from active weapon state
+    ai_move_locked:       bool, // set by AI behavior this frame
+    cant_volitional_move: bool, // final movement lock; momentum and knockback are not affected
     // Weapons (shared between player and enemies)
     active_weapon:        WeaponType,
     weapons:              [WeaponType]WeaponInstance,
@@ -459,6 +461,15 @@ draw_text :: proc(pos: Vec2, size: f32, fmtstring: string, args: ..any) {
     rl.DrawText(cs, i32(pos.x), i32(pos.y), i32(size), rl.RAYWHITE)
 }
 
+update_weapon_move_lock :: proc(entity: ^Entity) {
+    inst := entity.weapons[entity.active_weapon]
+    entity.weapon_move_locked = inst.state != .Idle && inst.state != .Cooldown
+}
+
+resolve_volitional_movement_lock :: proc(entity: ^Entity) {
+    entity.cant_volitional_move = entity.weapon_move_locked || entity.ai_move_locked
+}
+
 // ── Weapon Systems ─────────────────────────────────────────────────────────────
 
 enter_state :: proc(inst: ^WeaponInstance, new_state: WeaponState, duration: f32) {
@@ -581,9 +592,6 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
     muzzle_pos := entity.pos + aim_dir * (entity.radius + 15)
 
     is_player := entity.type == .Player
-
-    // Update cant_volitional_move based on weapon state
-    entity.cant_volitional_move = inst.state != .Idle && inst.state != .Cooldown
 
     inst.state_timer += dt
 
@@ -718,6 +726,9 @@ update_entity_weapons :: proc(entity: ^Entity, input: WeaponInput, dt: f32) {
             }
     }
 
+    update_weapon_move_lock(entity)
+    resolve_volitional_movement_lock(entity)
+
     // Decay muzzle flash (cosmetic, not state-gated)
     if inst.muzzle_flash_timer > 0 {inst.muzzle_flash_timer = max(0, inst.muzzle_flash_timer - dt)}
 }
@@ -763,8 +774,9 @@ update_gameplay :: proc() {
 
     dir_input: Vec2
     {     // Movement
-        player_inst := st.player.weapons[st.player.active_weapon]
-        st.player.cant_volitional_move = player_inst.state != .Idle && player_inst.state != .Cooldown
+        st.player.ai_move_locked = false
+        update_weapon_move_lock(st.player)
+        resolve_volitional_movement_lock(st.player)
         if !st.player.cant_volitional_move {
             if rl.IsKeyDown(.W) {dir_input.y -= 1}
             if rl.IsKeyDown(.S) {dir_input.y += 1}
@@ -933,7 +945,8 @@ update_gameplay :: proc() {
             }
 
             update_entity_weapons(e, enemy_input, dt)
-            e.cant_volitional_move = e.cant_volitional_move || ai_freeze
+            e.ai_move_locked = ai_freeze
+            resolve_volitional_movement_lock(e)
 
             if !e.cant_volitional_move && e.ai_state != .Dashing {
                 move_accel_per_sec := e.move_speed * (1 - FrictionGroundPerTick) * 35.0 * e.move_accel
